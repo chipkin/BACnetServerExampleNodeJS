@@ -1,0 +1,16 @@
+{
+    "name": "BACnetServerExampleNodeJS",
+    "version": "1.0.0",
+    "description": "An example server application for the CAS BACnet Stack",
+    "main": "program.js",
+    "dependencies": {
+        "dequeue": "^1.0.5",
+        "ffi": "^2.3.0"
+    },
+    "devDependencies": {},
+    "scripts": {
+        "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "author": "Steven Smethurst",
+    "license": "ISC"
+}
