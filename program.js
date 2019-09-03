@@ -31,6 +31,18 @@ var FuncPtrCallbackSendMessage = ffi.Callback('uint16', [uint8Ptr, 'uint16', uin
 var FuncPtrCallbackReceiveMessage = ffi.Callback('uint16', [uint8Ptr, 'uint16', uint8Ptr, 'uint8', uint8Ptr, uint8Ptr], CallbackRecvMessage)
 var FuncPtrCallbackGetSystemTime = ffi.Callback('uint64', [], CallbackGetSystemTime)
 
+var FuncPtrCallbackGetPropertyCharacterString = ffi.Callback('bool', ['uint32', 'uint16', 'uint32', 'uint32', 'char*', 'uint32*', 'uint32', 'uint8', 'bool', 'uint32'], GetPropertyCharacterString)
+var FuncPtrCallbackGetPropertyReal = ffi.Callback('bool', ['uint32', 'uint16', 'uint32', 'uint32', 'float*', 'bool', 'uint32'], GetPropertyReal)
+var FuncPtrCallbackGetPropertyBool = ffi.Callback('bool', ['uint32', 'uint16', 'uint32', 'uint32', 'bool*', 'bool', 'uint32'], GetPropertyBool)
+var FuncPtrCallbackGetPropertyEnumerated = ffi.Callback('bool', ['uint32', 'uint16', 'uint32', 'uint32', 'uint32*', 'bool', 'uint32'], GetPropertyEnumerated)
+var FuncPtrCallbackGetPropertyDate = ffi.Callback('bool', ['uint32', 'uint16', 'uint32', 'uint32', 'uint8*', 'uint8*', 'uint8*', 'uint8*', 'bool', 'uint32'], GetPropertyDate)
+var FuncPtrCallbackGetPropertyDouble = ffi.Callback('bool', ['uint32', 'uint16', 'uint32', 'uint32', 'double*', 'bool', 'uint32'], GetPropertyDouble)
+var FuncPtrCallbackGetPropertyOctetString = ffi.Callback('bool', ['uint32', 'uint16', 'uint32', 'uint32', 'uint8*', 'uint32*', 'uint32', 'uint8', 'bool', 'uint32'], GetPropertyOctetString)
+var FuncPtrCallbackGetPropertySignedInteger = ffi.Callback('bool', ['uint32', 'uint16', 'uint32', 'uint32', 'int32*', 'bool', 'uint32'], GetPropertySignedInteger)
+var FuncPtrCallbackGetPropertyTime = ffi.Callback('bool', ['uint32', 'uint16', 'uint32', 'uint32', 'uint8*', 'uint8*', 'uint8*', 'uint8*', 'bool', 'uint32'], GetPropertyTime)
+var FuncPtrCallbackGetPropertyUnsignedInteger = ffi.Callback('bool', ['uint32', 'uint16', 'uint32', 'uint32', 'uint32*', 'bool', 'uint32'], GetPropertyUnsignedInteger)
+
+
 function CallbackSendMessage(message, messageLength, connectionString, connectionStringLength, networkType, broadcast) {
 
     // Convert the connection string to a buffer.
@@ -113,6 +125,69 @@ function CallbackGetSystemTime() {
     return d.getTime() / 1000
 }
 
+function GetPropertyCharacterString(deviceInstance, objectType, objectInstance, propertyIdentifier, value, valueElementCount, maxElementCount, encodingType, useArrayIndex, propertyArrayIndex) {
+    console.log("GetPropertyCharacterString - deviceInstance: ", deviceInstance, ", objectType: ", objectType, ", objectInstance: ", objectInstance, ", propertyIdentifier: ", propertyIdentifier, ", useArrayIndex: ", useArrayIndex, ", propertyArrayIndex: ", propertyArrayIndex)
+    console.log("GetPropertyCharacterString - maxElementCount: ", maxElementCount, ", encodingType: ", encodingType)
+
+    var newValue = ref.reinterpret(value, maxElementCount, 0)
+
+    if (deviceInstance == SETTING_BACNET_DEVICE_ID && objectType == CASBACnetStack.OBJECT_TYPE.DEVICE && propertyIdentifier == CASBACnetStack.PROPERTY_IDENTIFIER.OBJECT_NAME) {
+        var nameOfObject = "NodeJS Example Server"
+        newValue.write(nameOfObject, 0, 'utf8')
+        valueElementCount.writeInt32LE(nameOfObject.length, 0)
+        return true
+    }
+
+    return false
+
+}
+
+function GetPropertyReal(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex) {
+    console.log("GetPropertyReal - deviceInstance: ", deviceInstance, ", objectType: ", objectType, ", objectInstance: ", objectInstance, ", propertyIdentifier: ", propertyIdentifier, ", useArrayIndex: ", useArrayIndex, ", propertyArrayIndex: ", propertyArrayIndex)
+    return false
+}
+
+function GetPropertyBool(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex) {
+    console.log("GetPropertyBool - deviceInstance: ", deviceInstance, ", objectType: ", objectType, ", objectInstance: ", objectInstance, ", propertyIdentifier: ", propertyIdentifier, ", useArrayIndex: ", useArrayIndex, ", propertyArrayIndex: ", propertyArrayIndex)
+    return false
+}
+
+function GetPropertyEnumerated(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex) {
+    console.log("GetPropertyEnumerated - deviceInstance: ", deviceInstance, ", objectType: ", objectType, ", objectInstance: ", objectInstance, ", propertyIdentifier: ", propertyIdentifier, ", useArrayIndex: ", useArrayIndex, ", propertyArrayIndex: ", propertyArrayIndex)
+    return false
+}
+
+function GetPropertyDate(deviceInstance, objectType, objectInstance, propertyIdentifier, year, month, day, weekday, useArrayIndex, propertyArrayIndex) {
+    console.log("GetPropertyDate - deviceInstance: ", deviceInstance, ", objectType: ", objectType, ", objectInstance: ", objectInstance, ", propertyIdentifier: ", propertyIdentifier, ", useArrayIndex: ", useArrayIndex, ", propertyArrayIndex: ", propertyArrayIndex)
+    return false
+}
+
+function GetPropertyDouble(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex) {
+    console.log("GetPropertyDouble - deviceInstance: ", deviceInstance, ", objectType: ", objectType, ", objectInstance: ", objectInstance, ", propertyIdentifier: ", propertyIdentifier, ", useArrayIndex: ", useArrayIndex, ", propertyArrayIndex: ", propertyArrayIndex)
+    return false
+}
+
+function GetPropertyOctetString(deviceInstance, objectType, objectInstance, propertyIdentifier, value, valueElementCount, maxElementCount, encodingType, useArrayIndex, propertyArrayIndex) {
+    console.log("GetPropertyOctetString - deviceInstance: ", deviceInstance, ", objectType: ", objectType, ", objectInstance: ", objectInstance, ", propertyIdentifier: ", propertyIdentifier, ", useArrayIndex: ", useArrayIndex, ", propertyArrayIndex: ", propertyArrayIndex)
+    return false
+}
+
+function GetPropertySignedInteger(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex) {
+    console.log("GetPropertySignedInteger - deviceInstance: ", deviceInstance, ", objectType: ", objectType, ", objectInstance: ", objectInstance, ", propertyIdentifier: ", propertyIdentifier, ", useArrayIndex: ", useArrayIndex, ", propertyArrayIndex: ", propertyArrayIndex)
+    return false
+}
+
+function GetPropertyTime(deviceInstance, objectType, objectInstance, propertyIdentifier, hour, minute, second, hundrethSeconds, useArrayIndex, propertyArrayIndex) {
+    console.log("GetPropertyTime - deviceInstance: ", deviceInstance, ", objectType: ", objectType, ", objectInstance: ", objectInstance, ", propertyIdentifier: ", propertyIdentifier, ", useArrayIndex: ", useArrayIndex, ", propertyArrayIndex: ", propertyArrayIndex)
+    return false
+}
+
+function GetPropertyUnsignedInteger(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex) {
+    console.log("GetPropertyUnsignedInteger - deviceInstance: ", deviceInstance, ", objectType: ", objectType, ", objectInstance: ", objectInstance, ", propertyIdentifier: ", propertyIdentifier, ", useArrayIndex: ", useArrayIndex, ", propertyArrayIndex: ", propertyArrayIndex)
+    return false
+}
+
+
 
 
 function main() {
@@ -133,18 +208,39 @@ function main() {
     CASBACnetStack.stack.BACnetStack_RegisterCallbackReceiveMessage(FuncPtrCallbackReceiveMessage)
     CASBACnetStack.stack.BACnetStack_RegisterCallbackGetSystemTime(FuncPtrCallbackGetSystemTime)
 
+    CASBACnetStack.stack.BACnetStack_RegisterCallbackGetPropertyCharacterString(FuncPtrCallbackGetPropertyCharacterString)
+    CASBACnetStack.stack.BACnetStack_RegisterCallbackGetPropertyReal(FuncPtrCallbackGetPropertyReal)
+    CASBACnetStack.stack.BACnetStack_RegisterCallbackGetPropertyBool(FuncPtrCallbackGetPropertyBool)
+    CASBACnetStack.stack.BACnetStack_RegisterCallbackGetPropertyEnumerated(FuncPtrCallbackGetPropertyEnumerated)
+    CASBACnetStack.stack.BACnetStack_RegisterCallbackGetPropertyDate(FuncPtrCallbackGetPropertyDate)
+    CASBACnetStack.stack.BACnetStack_RegisterCallbackGetPropertyDouble(FuncPtrCallbackGetPropertyDouble)
+    CASBACnetStack.stack.BACnetStack_RegisterCallbackGetPropertyOctetString(FuncPtrCallbackGetPropertyOctetString)
+    CASBACnetStack.stack.BACnetStack_RegisterCallbackGetPropertySignedInteger(FuncPtrCallbackGetPropertySignedInteger)
+    CASBACnetStack.stack.BACnetStack_RegisterCallbackGetPropertyTime(FuncPtrCallbackGetPropertyTime)
+    CASBACnetStack.stack.BACnetStack_RegisterCallbackGetPropertyUnsignedInteger(FuncPtrCallbackGetPropertyUnsignedInteger)
+
     // Setup the BACnet device. 
     // ------------------------------------------------------------------------
     console.log("FYI: Setting up BACnet device...");
     console.log("FYI: BACnet device instance:", SETTING_BACNET_DEVICE_ID);
     CASBACnetStack.stack.BACnetStack_AddDevice(SETTING_BACNET_DEVICE_ID)
-    CASBACnetStack.stack.BACnetStack_AddObject(SETTING_BACNET_DEVICE_ID, 0, 0)
-    CASBACnetStack.stack.BACnetStack_AddObject(SETTING_BACNET_DEVICE_ID, 1, 1)
-    CASBACnetStack.stack.BACnetStack_AddObject(SETTING_BACNET_DEVICE_ID, 2, 2)
-    CASBACnetStack.stack.BACnetStack_AddObject(SETTING_BACNET_DEVICE_ID, 3, 3)
-    CASBACnetStack.stack.BACnetStack_AddObject(SETTING_BACNET_DEVICE_ID, 4, 4)
-    CASBACnetStack.stack.BACnetStack_AddObject(SETTING_BACNET_DEVICE_ID, 5, 5)
-    CASBACnetStack.stack.BACnetStack_AddObject(SETTING_BACNET_DEVICE_ID, 6, 6)
+    CASBACnetStack.stack.BACnetStack_AddObject(SETTING_BACNET_DEVICE_ID, CASBACnetStack.OBJECT_TYPE.ANALOG_INPUT, 0)
+    CASBACnetStack.stack.BACnetStack_AddObject(SETTING_BACNET_DEVICE_ID, CASBACnetStack.OBJECT_TYPE.ANALOG_OUTPUT, 1)
+    CASBACnetStack.stack.BACnetStack_AddObject(SETTING_BACNET_DEVICE_ID, CASBACnetStack.OBJECT_TYPE.ANALOG_VALUE, 2)
+    CASBACnetStack.stack.BACnetStack_AddObject(SETTING_BACNET_DEVICE_ID, CASBACnetStack.OBJECT_TYPE.BINARY_INPUT, 3)
+    CASBACnetStack.stack.BACnetStack_AddObject(SETTING_BACNET_DEVICE_ID, CASBACnetStack.OBJECT_TYPE.BINARY_OUTPUT, 4)
+    CASBACnetStack.stack.BACnetStack_AddObject(SETTING_BACNET_DEVICE_ID, CASBACnetStack.OBJECT_TYPE.BINARY_VALUE, 5)
+    CASBACnetStack.stack.BACnetStack_AddObject(SETTING_BACNET_DEVICE_ID, CASBACnetStack.OBJECT_TYPE.MULTI_STATE_INPUT, 13)
+    CASBACnetStack.stack.BACnetStack_AddObject(SETTING_BACNET_DEVICE_ID, CASBACnetStack.OBJECT_TYPE.MULTI_STATE_OUTPUT, 14)
+    CASBACnetStack.stack.BACnetStack_AddObject(SETTING_BACNET_DEVICE_ID, CASBACnetStack.OBJECT_TYPE.MULTI_STATE_VALUE, 19)
+    CASBACnetStack.stack.BACnetStack_AddObject(SETTING_BACNET_DEVICE_ID, CASBACnetStack.OBJECT_TYPE.BITSTRING_VALUE, 39)
+    CASBACnetStack.stack.BACnetStack_AddObject(SETTING_BACNET_DEVICE_ID, CASBACnetStack.OBJECT_TYPE.CHARACTERSTRING_VALUE, 40)
+    CASBACnetStack.stack.BACnetStack_AddObject(SETTING_BACNET_DEVICE_ID, CASBACnetStack.OBJECT_TYPE.INTEGER_VALUE, 45)
+    CASBACnetStack.stack.BACnetStack_AddObject(SETTING_BACNET_DEVICE_ID, CASBACnetStack.OBJECT_TYPE.LARGE_ANALOG_VALUE, 46)
+    CASBACnetStack.stack.BACnetStack_AddObject(SETTING_BACNET_DEVICE_ID, CASBACnetStack.OBJECT_TYPE.OCTETSTRING_VALUE, 47)
+    CASBACnetStack.stack.BACnetStack_AddObject(SETTING_BACNET_DEVICE_ID, CASBACnetStack.OBJECT_TYPE.POSITIVE_INTEGER_VALUE, 48)
+    CASBACnetStack.stack.BACnetStack_AddObject(SETTING_BACNET_DEVICE_ID, CASBACnetStack.OBJECT_TYPE.TIME_VALUE, 50)
+
 
     // Setup the UDP socket 
     // ------------------------------------------------------------------------
