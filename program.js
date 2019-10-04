@@ -1,19 +1,21 @@
-//
+// CAS BACnet Stack NodeJS Example
+// More information can be found here: https://github.com/chipkin/BACnetServerExampleNodeJS
+// Start with the "function main()"
+// 
 // Written by: Steven Smethurst
-// Last updated: Aug 30, 2019 
+// Last updated: Oct 03, 2019 
 //
 
 var CASBACnetStack = require('./CASBACnetStackAdapter'); // CAS BACnet stack 
+var database = require('./database.json'); // Example database of values. 
 
 var ffi = require('ffi'); // DLL interface. https://github.com/node-ffi/node-ffi 
 var ref = require('ref'); // DLL Data types. https://github.com/TooTallNate/ref 
 var dequeue = require('dequeue'); // Creates a FIFO buffer. https://github.com/lleo/node-dequeue/
-
 const dgram = require('dgram'); // UDP server 
 
 // Settings 
-const SETTING_BACNET_DEVICE_ID = 389002
-const SETTING_BACNET_PORT = 47808
+const SETTING_BACNET_PORT = 47808 // Default BACnet IP UDP Port. 
 
 // Constants 
 const APPLICATION_VERSION = "1.0.0.0"
@@ -31,6 +33,7 @@ var FuncPtrCallbackSendMessage = ffi.Callback('uint16', [uint8Ptr, 'uint16', uin
 var FuncPtrCallbackReceiveMessage = ffi.Callback('uint16', [uint8Ptr, 'uint16', uint8Ptr, 'uint8', uint8Ptr, uint8Ptr], CallbackRecvMessage)
 var FuncPtrCallbackGetSystemTime = ffi.Callback('uint64', [], CallbackGetSystemTime)
 
+// Callbacks GetProperty
 var FuncPtrCallbackGetPropertyCharacterString = ffi.Callback('bool', ['uint32', 'uint16', 'uint32', 'uint32', 'char*', 'uint32*', 'uint32', 'uint8', 'bool', 'uint32'], GetPropertyCharacterString)
 var FuncPtrCallbackGetPropertyReal = ffi.Callback('bool', ['uint32', 'uint16', 'uint32', 'uint32', 'float*', 'bool', 'uint32'], GetPropertyReal)
 var FuncPtrCallbackGetPropertyBool = ffi.Callback('bool', ['uint32', 'uint16', 'uint32', 'uint32', 'bool*', 'bool', 'uint32'], GetPropertyBool)
@@ -43,6 +46,7 @@ var FuncPtrCallbackGetPropertyTime = ffi.Callback('bool', ['uint32', 'uint16', '
 var FuncPtrCallbackGetPropertyUnsignedInteger = ffi.Callback('bool', ['uint32', 'uint16', 'uint32', 'uint32', 'uint32*', 'bool', 'uint32'], GetPropertyUnsignedInteger)
 
 
+// This callback fundtion is used when the CAS BACnet stack wants to send a message out onto the network. 
 function CallbackSendMessage(message, messageLength, connectionString, connectionStringLength, networkType, broadcast) {
 
     // Convert the connection string to a buffer.
@@ -73,6 +77,7 @@ function CallbackSendMessage(message, messageLength, connectionString, connectio
     return 0
 }
 
+// This callback fundtion is used when the CAS BACnet stack wants to check to see if there are any incomming messages 
 function CallbackRecvMessage(message, maxMessageLength, receivedConnectionString, maxConnectionStringLength, receivedConnectionStringLength, networkType) {
 
     // Check to see if there are any messages waiting on the buffer. 
@@ -96,6 +101,7 @@ function CallbackRecvMessage(message, maxMessageLength, receivedConnectionString
 
         // Reinterpret the receivedConnectionString parameter with a the max buffer size. 
         var newReceivedConnectionString = ref.reinterpret(receivedConnectionString, maxConnectionStringLength, 0)
+        // ToDo: 
         newReceivedConnectionString.writeUInt8(192, 0);
         newReceivedConnectionString.writeUInt8(168, 1);
         newReceivedConnectionString.writeUInt8(1, 2);
@@ -119,31 +125,64 @@ function CallbackRecvMessage(message, maxMessageLength, receivedConnectionString
     return 0
 }
 
+// This callback is used to determin the current system time. 
 function CallbackGetSystemTime() {
     // https://stackoverflow.com/a/9456144/58456
     var d = new Date()
     return d.getTime() / 1000
 }
 
+
+
+// Helper function to get a key name from an array by the value.
+function HelperGetKeyByValue(object, value) {
+    // https://www.geeksforgeeks.org/how-to-get-a-key-in-a-javascript-object-by-its-value/
+    return Object.keys(object).find(key => object[key] === value);
+}
+
+
+// This callback is used by the CAS BACnet stack to get a property of an object as a string. 
+// If the property is not defined then return false and the CAS BACnet stack will use a default value. 
 function GetPropertyCharacterString(deviceInstance, objectType, objectInstance, propertyIdentifier, value, valueElementCount, maxElementCount, encodingType, useArrayIndex, propertyArrayIndex) {
-    console.log("GetPropertyCharacterString - deviceInstance: ", deviceInstance, ", objectType: ", objectType, ", objectInstance: ", objectInstance, ", propertyIdentifier: ", propertyIdentifier, ", useArrayIndex: ", useArrayIndex, ", propertyArrayIndex: ", propertyArrayIndex)
-    console.log("GetPropertyCharacterString - maxElementCount: ", maxElementCount, ", encodingType: ", encodingType)
+    console.log("GetPropertyCharacterString - deviceInstance: ", deviceInstance, ", objectType: ", objectType, ", objectInstance: ", objectInstance, ", propertyIdentifier: ", propertyIdentifier, ", useArrayIndex: ", useArrayIndex, ", propertyArrayIndex: ", propertyArrayIndex, ", maxElementCount: ", maxElementCount, ", encodingType: ", encodingType)
 
-    var newValue = ref.reinterpret(value, maxElementCount, 0)
+    // Convert the enumerated values to human readable strings. 
+    var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase()
+    var resultObjectType = HelperGetKeyByValue(CASBACnetStack.OBJECT_TYPE, objectType).toLowerCase()
 
-    if (deviceInstance == SETTING_BACNET_DEVICE_ID && objectType == CASBACnetStack.OBJECT_TYPE.DEVICE && propertyIdentifier == CASBACnetStack.PROPERTY_IDENTIFIER.OBJECT_NAME) {
-        var nameOfObject = "NodeJS Example Server"
-        newValue.write(nameOfObject, 0, 'utf8')
-        valueElementCount.writeInt32LE(nameOfObject.length, 0)
+    // Check to see if we have defined this property in the database. 
+    if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && typeof database[resultObjectType][objectInstance][resultPropertyIdentifier] !== 'undefined') {
+        // The property has been defined. 
+        // Convert the property to the requested data type and return success. 
+        charValue = database[resultObjectType][objectInstance][resultPropertyIdentifier];
+
+        var newValue = ref.reinterpret(value, maxElementCount, 0)
+        newValue.write(charValue, 0, 'utf8')
+        valueElementCount.writeInt32LE(charValue.length, 0)
         return true
     }
 
+    // Could not find the value in the database. 
     return false
 
 }
 
 function GetPropertyReal(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex) {
     console.log("GetPropertyReal - deviceInstance: ", deviceInstance, ", objectType: ", objectType, ", objectInstance: ", objectInstance, ", propertyIdentifier: ", propertyIdentifier, ", useArrayIndex: ", useArrayIndex, ", propertyArrayIndex: ", propertyArrayIndex)
+
+    // Convert the enumerated values to human readable strings. 
+    var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase()
+    var resultObjectType = HelperGetKeyByValue(CASBACnetStack.OBJECT_TYPE, objectType).toLowerCase()
+
+    // Check to see if we have defined this property in the database. 
+    if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && typeof database[resultObjectType][objectInstance][resultPropertyIdentifier] !== 'undefined') {
+        // The property has been defined. 
+        // Convert the property to the requested data type and return success. 
+        var valueToWrite = database[resultObjectType][objectInstance][resultPropertyIdentifier]
+
+        ref.set(value, 0, valueToWrite)
+        return true
+    }
     return false
 }
 
@@ -154,6 +193,34 @@ function GetPropertyBool(deviceInstance, objectType, objectInstance, propertyIde
 
 function GetPropertyEnumerated(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex) {
     console.log("GetPropertyEnumerated - deviceInstance: ", deviceInstance, ", objectType: ", objectType, ", objectInstance: ", objectInstance, ", propertyIdentifier: ", propertyIdentifier, ", useArrayIndex: ", useArrayIndex, ", propertyArrayIndex: ", propertyArrayIndex)
+
+    // Convert the enumerated values to human readable strings. 
+    var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase()
+    var resultObjectType = HelperGetKeyByValue(CASBACnetStack.OBJECT_TYPE, objectType).toLowerCase()
+
+    // Check to see if we have defined this property in the database. 
+    if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && typeof database[resultObjectType][objectInstance][resultPropertyIdentifier] !== 'undefined') {
+        // The property has been defined. 
+        // Convert the property to the requested data type and return success. 
+        var valueToWrite = database[resultObjectType][objectInstance][resultPropertyIdentifier]
+
+        // The units could be represented as either a string or a number. If its a string then we need to 
+        // convert the string to the enumerated vlaue. 
+        if (resultPropertyIdentifier == "units" && typeof valueToWrite !== "number") {
+            // This is a string repersentation of the units. Decode the string into a enumerated value. 
+            if (valueToWrite.toUpperCase() in CASBACnetStack.ENGINEERING_UNITS) {
+                // Update the string to use the value instead. 
+                valueToWrite = CASBACnetStack.ENGINEERING_UNITS[valueToWrite.toUpperCase()]
+            } else {
+                console.log("Error: Unknown unit string. can not convert to enumerated value. value:", valueToWrite)
+                return false;
+            }
+        }
+
+        ref.set(value, 0, valueToWrite)
+        return true
+    }
+
     return false
 }
 
@@ -189,7 +256,6 @@ function GetPropertyUnsignedInteger(deviceInstance, objectType, objectInstance, 
 
 
 
-
 function main() {
 
     // Print version information 
@@ -221,26 +287,36 @@ function main() {
 
     // Setup the BACnet device. 
     // ------------------------------------------------------------------------
+    var DEVICE_INSTANCE = Object.keys(database["device"])[0];
     console.log("FYI: Setting up BACnet device...");
-    console.log("FYI: BACnet device instance:", SETTING_BACNET_DEVICE_ID);
-    CASBACnetStack.stack.BACnetStack_AddDevice(SETTING_BACNET_DEVICE_ID)
-    CASBACnetStack.stack.BACnetStack_AddObject(SETTING_BACNET_DEVICE_ID, CASBACnetStack.OBJECT_TYPE.ANALOG_INPUT, 0)
-    CASBACnetStack.stack.BACnetStack_AddObject(SETTING_BACNET_DEVICE_ID, CASBACnetStack.OBJECT_TYPE.ANALOG_OUTPUT, 1)
-    CASBACnetStack.stack.BACnetStack_AddObject(SETTING_BACNET_DEVICE_ID, CASBACnetStack.OBJECT_TYPE.ANALOG_VALUE, 2)
-    CASBACnetStack.stack.BACnetStack_AddObject(SETTING_BACNET_DEVICE_ID, CASBACnetStack.OBJECT_TYPE.BINARY_INPUT, 3)
-    CASBACnetStack.stack.BACnetStack_AddObject(SETTING_BACNET_DEVICE_ID, CASBACnetStack.OBJECT_TYPE.BINARY_OUTPUT, 4)
-    CASBACnetStack.stack.BACnetStack_AddObject(SETTING_BACNET_DEVICE_ID, CASBACnetStack.OBJECT_TYPE.BINARY_VALUE, 5)
-    CASBACnetStack.stack.BACnetStack_AddObject(SETTING_BACNET_DEVICE_ID, CASBACnetStack.OBJECT_TYPE.MULTI_STATE_INPUT, 13)
-    CASBACnetStack.stack.BACnetStack_AddObject(SETTING_BACNET_DEVICE_ID, CASBACnetStack.OBJECT_TYPE.MULTI_STATE_OUTPUT, 14)
-    CASBACnetStack.stack.BACnetStack_AddObject(SETTING_BACNET_DEVICE_ID, CASBACnetStack.OBJECT_TYPE.MULTI_STATE_VALUE, 19)
-    CASBACnetStack.stack.BACnetStack_AddObject(SETTING_BACNET_DEVICE_ID, CASBACnetStack.OBJECT_TYPE.BITSTRING_VALUE, 39)
-    CASBACnetStack.stack.BACnetStack_AddObject(SETTING_BACNET_DEVICE_ID, CASBACnetStack.OBJECT_TYPE.CHARACTERSTRING_VALUE, 40)
-    CASBACnetStack.stack.BACnetStack_AddObject(SETTING_BACNET_DEVICE_ID, CASBACnetStack.OBJECT_TYPE.INTEGER_VALUE, 45)
-    CASBACnetStack.stack.BACnetStack_AddObject(SETTING_BACNET_DEVICE_ID, CASBACnetStack.OBJECT_TYPE.LARGE_ANALOG_VALUE, 46)
-    CASBACnetStack.stack.BACnetStack_AddObject(SETTING_BACNET_DEVICE_ID, CASBACnetStack.OBJECT_TYPE.OCTETSTRING_VALUE, 47)
-    CASBACnetStack.stack.BACnetStack_AddObject(SETTING_BACNET_DEVICE_ID, CASBACnetStack.OBJECT_TYPE.POSITIVE_INTEGER_VALUE, 48)
-    CASBACnetStack.stack.BACnetStack_AddObject(SETTING_BACNET_DEVICE_ID, CASBACnetStack.OBJECT_TYPE.TIME_VALUE, 50)
+    console.log("FYI: BACnet device instance:", DEVICE_INSTANCE);
+    CASBACnetStack.stack.BACnetStack_AddDevice(DEVICE_INSTANCE)
 
+    // Loop thought the database adding the objects as they are found. 
+    for (var objectTypeKey in database) {
+        // Decode the string repseration of the object type as a enumeration. 
+        if (!objectTypeKey.toUpperCase() in CASBACnetStack.OBJECT_TYPE) {
+            console.log("Error: Unknown object type found. object type:", objectTypeKey)
+            continue;
+        }
+        var objectTypeEnum = CASBACnetStack.OBJECT_TYPE[objectTypeKey.toUpperCase()];
+        if (objectTypeEnum === CASBACnetStack.OBJECT_TYPE.device) {
+            continue; // The device has already been added. 
+        }
+
+        // Loop thought the ObjectInstance for this object type. 
+        for (var objectInstance in database[objectTypeKey]) {
+            console.log("FYI: Adding object. objectType:", objectTypeKey, "(" + objectTypeEnum + "), objectInstance:", objectInstance)
+            CASBACnetStack.stack.BACnetStack_AddObject(DEVICE_INSTANCE, objectTypeEnum, objectInstance)
+        }
+    }
+
+    // Note: A object can be manually added as well 
+    // CASBACnetStack.stack.BACnetStack_AddObject(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.ANALOG_INPUT, 0)
+
+    // Set up the BACnet services 
+    // By default only the required servics are enabled. 
+    CASBACnetStack.stack.BACnetStack_SetServiceEnabled(DEVICE_INSTANCE, CASBACnetStack.SERVICES_SUPPORTED.READ_PROPERTY_MULTIPLE, true)
 
     // Setup the UDP socket 
     // ------------------------------------------------------------------------
@@ -252,7 +328,7 @@ function main() {
     });
 
     server.on('message', (msg, rinfo) => {
-        console.log(`FYI: UDP.Server message. From: ${rinfo.address}:${rinfo.port}, Message:`, msg);
+        // console.log(`FYI: UDP.Server message. From: ${rinfo.address}:${rinfo.port}, Message:`, msg);
 
         fifoRecvBuffer.push([msg, rinfo.address + ":" + rinfo.port])
     });
@@ -275,7 +351,7 @@ function main() {
     console.log("FYI: Starting main program loop... ");
     setInterval(() => {
         CASBACnetStack.stack.BACnetStack_Loop()
-        process.stdout.write(".");
+        // process.stdout.write(".");
     }, 100);
 }
 
