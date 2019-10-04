@@ -1,0 +1,104 @@
+{
+    "device": {
+        "389002": {
+            "object_name": "NodeJS Example Server. Rainbow"
+        }
+    },
+    "analog_input": {
+        "0": {
+            "object_name": "AnalogInput Bronze",
+            "present_value": 37.12,
+            "units": "degreescelsius"
+        }
+    },
+    "analog_output": {
+        "1": {
+            "object_name": "AnalogOutput Chartreuse"
+        }
+    },
+    "analog_value": {
+        "2": {
+            "object_name": "AnalogValue Diamond"
+        }
+    },
+    "binary_input": {
+        "3": {
+            "object_name": "BinaryInput Emerald"
+        }
+    },
+    "binary_output": {
+        "4": {
+            "object_name": "BinaryOutput Fuchsia"
+        }
+    },
+    "binary_value": {
+        "5": {
+            "object_name": "BinaryValue Gold"
+        }
+    },
+    "multi_state_input": {
+        "13": {
+            "object_name": "MultiStateInput Hot Pink"
+        }
+    },
+    "multi_state_output": {
+        "14": {
+            "object_name": "MultiStateOutput Indigo"
+        }
+    },
+    "multi_state_value": {
+        "19": {
+            "object_name": "MultiStateValue Kiwi"
+        }
+    },
+    "trend_log": {
+        "20": {
+            "object_name": "TrendLog Lilac"
+        }
+    },
+    "bitstring_value": {
+        "39": {
+            "object_name": "BitstringValue Magenta"
+        }
+    },
+    "characterstring_value": {
+        "40": {
+            "object_name": "CharacterstringValue Nickel"
+        }
+    },
+    "data_value": {
+        "42": {
+            "object_name": "DateValue Onyx"
+        }
+    },
+    "integer_value": {
+        "45": {
+            "object_name": "IntegerValue Purple"
+        }
+    },
+    "large_analog_value": {
+        "46": {
+            "object_name": "LargeAnalogValue Quartz"
+        }
+    },
+    "octetstring_value": {
+        "47": {
+            "object_name": "OctetstringValue Red"
+        }
+    },
+    "positive_integer_value": {
+        "48": {
+            "object_name": "PositiveIntegerValue Silver"
+        }
+    },
+    "time_value": {
+        "50": {
+            "object_name": "TimeValue Turquoise"
+        }
+    },
+    "NetworkPort": {
+        "56": {
+            "object_name": "NetworkPort Umber"
+        }
+    }
+}
