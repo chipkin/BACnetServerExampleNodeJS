@@ -28,7 +28,7 @@ A basic BACnet IP server example written in NodeJS using the [CAS BACnet Stack](
 ```bash
 
 sudo apt install build-essential
-sudo npm install ffi
+npm install 
 node program.js
 
 ```

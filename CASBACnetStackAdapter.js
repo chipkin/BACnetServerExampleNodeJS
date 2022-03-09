@@ -1,5 +1,4 @@
-var ref = require('ref'); // DLL Data types 
-var ffi = require('ffi'); // DLL interface 
+var ffi = require('ffi-napi'); // DLL interface 
 
 CASBACNETSTACK_LIBARY_ARCHITECTURE = 'x64'; // x64 or x86 
 CASBACNETSTACK_LIBARY_TYPE = 'Debug'; // Release or Debug
@@ -12,6 +11,8 @@ if (process.platform == "win32") {
 } else {
     CASBACNETSTACK_LIBARY_FILENAME = CASBACNETSTACK_LIBARY_PATH + 'libCASBACnetStack_' + CASBACNETSTACK_LIBARY_ARCHITECTURE + '_' + CASBACNETSTACK_LIBARY_TYPE
 }
+
+// console.log("CASBACNETSTACK_LIBARY_FILENAME: " + CASBACNETSTACK_LIBARY_FILENAME);
 
 module.exports = {
     GetAdapterVersion: function GetAdapterVersion() {

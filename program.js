@@ -9,8 +9,8 @@
 var CASBACnetStack = require('./CASBACnetStackAdapter'); // CAS BACnet stack 
 var database = require('./database.json'); // Example database of values. 
 
-var ffi = require('ffi'); // DLL interface. https://github.com/node-ffi/node-ffi 
-var ref = require('ref'); // DLL Data types. https://github.com/TooTallNate/ref 
+var ffi = require('ffi-napi'); // DLL interface. https://github.com/node-ffi/node-ffi 
+var ref = require('ref-napi'); // DLL Data types. https://github.com/TooTallNate/ref 
 var dequeue = require('dequeue'); // Creates a FIFO buffer. https://github.com/lleo/node-dequeue/
 const dgram = require('dgram'); // UDP server 
 
