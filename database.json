@@ -1,54 +1,85 @@
 {
     "device": {
         "389002": {
-            "object_name": "NodeJS Example Server. Rainbow"
+            "object_name": "NodeJS Example Server. Rainbow",
+            "utc_offset": 0,
+            "current_time_offset": 0,
+            "systemstatus": 0
         }
     },
     "analog_input": {
         "0": {
             "object_name": "AnalogInput Bronze",
             "present_value": 37.12,
-            "units": "degreescelsius"
+            "covincrement": 0,
+            "reliabiltiy": 0,
+            "description": "AnalogInput Bronze description",
+            "units": "degreescelsius",
+
+            "proprietary_year": 0,
+            "proprietary_month": 0,
+            "proprietary_day": 0,
+            "proprietary_weekDay": 0,
+            "proprietary_hour": 0,
+            "proprietary_minute": 0,
+            "proprietary_second": 0,
+            "proprietary_hundredthSeconds": 0
         }
     },
     "analog_output": {
         "1": {
-            "object_name": "AnalogOutput Chartreuse"
+            "object_name": "AnalogOutput Chartreuse",
+            "priority_array_nulls": [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true],
+            "priority_array_values": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
         }
     },
     "analog_value": {
         "2": {
-            "object_name": "AnalogValue Diamond"
+            "object_name": "AnalogValue Diamond",
+            "present_value": 12.12,
+            "maxpresvalue": 50,
+            "minpresvalue": 0
         }
     },
     "binary_input": {
         "3": {
-            "object_name": "BinaryInput Emerald"
+            "object_name": "BinaryInput Emerald",
+            "present_value": false
         }
     },
     "binary_output": {
         "4": {
-            "object_name": "BinaryOutput Fuchsia"
+            "object_name": "BinaryOutput Fuchsia",
+            "priority_array_nulls": [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true],
+            "priority_array_values": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
         }
     },
     "binary_value": {
         "5": {
-            "object_name": "BinaryValue Gold"
+            "object_name": "BinaryValue Gold",
+            "present_value": false
         }
     },
     "multi_state_input": {
         "13": {
-            "object_name": "MultiStateInput Hot Pink"
+            "object_name": "MultiStateInput Hot Pink",
+            "present_value": 1,
+            "numberofstates": 3,
+            "statetext": ["statetext0", "statetext1", "statestext2"]
         }
     },
     "multi_state_output": {
         "14": {
-            "object_name": "MultiStateOutput Indigo"
+            "object_name": "MultiStateOutput Indigo",
+            "priority_array_nulls": [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true],
+            "priority_array_values": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            "numberofstates": 2
         }
     },
     "multi_state_value": {
         "19": {
-            "object_name": "MultiStateValue Kiwi"
+            "object_name": "MultiStateValue Kiwi",
+            "numberofstates": 2
         }
     },
     "trend_log": {
@@ -58,32 +89,45 @@
     },
     "bitstring_value": {
         "39": {
-            "object_name": "BitstringValue Magenta"
+            "object_name": "BitstringValue Magenta",
+            "present_value": [true, false, false, false],
+            "bittext": ["test0", "test1", "test2", "test3"]
         }
     },
     "characterstring_value": {
         "40": {
-            "object_name": "CharacterstringValue Nickel"
+            "object_name": "CharacterstringValue Nickel",
+            "present_value": "Character String Object (40) value"
+
         }
     },
-    "data_value": {
+    "date_value": {
         "42": {
-            "object_name": "DateValue Onyx"
+            "object_name": "DateValue Onyx",
+            "present_value": {
+                "year": 150,
+                "month": 12,
+                "day": 21,
+                "weekday": 2
+            }
         }
     },
     "integer_value": {
         "45": {
-            "object_name": "IntegerValue Purple"
+            "object_name": "IntegerValue Purple",
+            "present_value": 29
         }
     },
     "large_analog_value": {
         "46": {
-            "object_name": "LargeAnalogValue Quartz"
+            "object_name": "LargeAnalogValue Quartz",
+            "present_value": 1290837
         }
     },
     "octetstring_value": {
         "47": {
-            "object_name": "OctetstringValue Red"
+            "object_name": "OctetstringValue Red",
+            "present_value": [0, 255, 13, 5]
         }
     },
     "positive_integer_value": {
@@ -93,12 +137,49 @@
     },
     "time_value": {
         "50": {
-            "object_name": "TimeValue Turquoise"
+            "object_name": "TimeValue Turquoise",
+            "present_value": {
+                "hour": 12,
+                "minute": 59,
+                "second": 32,
+                "hundrethSeconds": 9
+            }
         }
     },
-    "NetworkPort": {
+    "network_port": {
         "56": {
-            "object_name": "NetworkPort Umber"
+            "object_name": "NetworkPort Umber",
+
+            "bacnetipudpport": 47808,
+            "ipaddress": [192, 168, 1, 28],
+            "ipaddress_length": 6,
+            "ipdefaultgateway": [192, 168, 1, 1],
+            "ipdefaultgateway_length": 4,
+            "ipsubnetmask": [255, 255, 255, 0],
+            "ipsubnetmask_length": 4,
+            "ipdnsserver": [[192, 168, 2, 28], [192, 168, 2, 29], [192, 168, 2, 30]],
+            "ipdnsserver_length": 4,
+            "broadcast_ip_address": [192, 168, 1, 255],
+            "changespending": false,
+            "fdbbmdaddress_host_type": 0,
+            "fdbbmdaddress_host_ip": [192, 168, 1, 28],
+            "fdbbmdaddress_port": 47808,
+            "fdsubscriptionlifetime": 500
+        }
+    },
+    "datetime_value": {
+        "57": {
+            "object_name": "DateTimeValue Viola",
+            "present_value": {
+                "year": 150,
+                "month": 12,
+                "day": 19,
+                "weekday": 0,
+                "hour": 9,
+                "minute": 7,
+                "second": 53,
+                "hundrethSeconds": 5
+            }
         }
     }
 }
