@@ -1076,9 +1076,16 @@ module.exports = {
         PH: 234,
         GRAMSPERSQUAREMETER: 235,
         MINUTESPERDEGREEKELVIN: 236
+    },
+
+    CONSTANTS: {
+        // Priority Array
+        MAX_BACNET_PRIORITY: 16,
+
+        // Network Port FdBbmdAddressOffset
+        FD_BBMD_ADDRESS_HOST: 1,
+        FD_BBMD_ADDRESS_PORT: 2
     }
-
-
 
 
 };
