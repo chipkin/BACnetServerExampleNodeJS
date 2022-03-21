@@ -12,5 +12,8 @@
         "start": "node program.js"
     },
     "author": "Steven Smethurst",
-    "license": "ISC"
+    "license": "ISC",
+    "devDependencies": {
+        "prettier": "2.6.0"
+    }
 }
