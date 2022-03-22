@@ -2,6 +2,7 @@
     "device": {
         "389002": {
             "object_name": "NodeJS Example Server. Rainbow",
+            "description": "NodeJS Example Server description",
             "utc_offset": 0,
             "current_time_offset": 0,
             "systemstatus": 0
@@ -79,7 +80,8 @@
     "multi_state_value": {
         "19": {
             "object_name": "MultiStateValue Kiwi",
-            "numberofstates": 2
+            "numberofstates": 2,
+            "present_value": 12
         }
     },
     "trend_log": {
@@ -132,7 +134,8 @@
     },
     "positive_integer_value": {
         "48": {
-            "object_name": "PositiveIntegerValue Silver"
+            "object_name": "PositiveIntegerValue Silver",
+            "present_value": 23
         }
     },
     "time_value": {

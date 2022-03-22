@@ -1085,7 +1085,14 @@ module.exports = {
         // Network Port FdBbmdAddressOffset
         FD_BBMD_ADDRESS_HOST: 1,
         FD_BBMD_ADDRESS_PORT: 2
+    },
+
+    ERROR_CODES: {
+        MISSING_REQUIRED_PARAMETER: 16,
+        NO_SPACE_TO_WRITE_PROPERTY: 20,
+        PASSWORD_FAILURE: 26,
+        VALUE_OUT_OF_RANGE: 37,
+        OPTIONAL_FUNCTIONALITY_NOT_SUPPORTED: 45,
+        INVALID_CONFIGURATION_DATA: 46
     }
-
-
 };

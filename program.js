@@ -14,6 +14,7 @@ var ref = require('ref-napi'); // DLL Data types. https://github.com/TooTallNate
 var dequeue = require('dequeue'); // Creates a FIFO buffer. https://github.com/lleo/node-dequeue/
 const dgram = require('dgram'); // UDP server
 const { truncate } = require('fs');
+const { privateDecrypt } = require('crypto');
 
 // Settings
 const SETTING_BACNET_PORT = 47808; // Default BACnet IP UDP Port.
@@ -70,6 +71,16 @@ var FuncPtrCallbackReinitializeDevice = ffi.Callback('bool', ['uint32', 'uint32'
 var FuncPtrCallbackDeviceCommunicationControl = ffi.Callback('bool', ['uint32', 'uint8', 'uint8*', 'uint8', 'bool', 'uint16', 'uint32*'], DeviceCommunicationControl);
 var FuncPtrHookTextMessage = ffi.Callback('bool', ['uint32', 'bool', 'uint32', 'uint8*', 'uint32', 'uint8', 'uint8*', 'uint32', 'uint8*', 'uint8', 'uint8', 'uint16', 'uint8*', 'uint8', 'uint16*', 'uint16*'], HookTextMessage);
 var FuncPtrHookLogDebugMessage = ffi.Callback('void', ['uint8*', 'uint16', 'uint8'], LogDebugMessage);
+
+// Helper Functions
+function CreateStringFromCharPointer(charPointer, length) {
+    let workingString = '';
+    for (let offset = 0; offset < length; offset++) {
+        workingString += String.fromCharCode(charPointer.readUInt8(offset));
+    }
+    console.log('DEBUG: String creation output: ', workingString);
+    return workingString;
+}
 
 // This callback function is used when the CAS BACnet stack wants to send a message out onto the network.
 function CallbackSendMessage(message, messageLength, connectionString, connectionStringLength, networkType, broadcast) {
@@ -171,7 +182,7 @@ function GetPropertyBitString(deviceInstance, objectType, objectInstance, proper
     var resultObjectType = HelperGetKeyByValue(CASBACnetStack.OBJECT_TYPE, objectType).toLowerCase();
 
     // Check to see if we have defined this property in the database.
-    if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE && objectType === CASBACnetStack.OBJECT_TYPE.BITSTRING_VALUE && typeof database[resultObjectType][objectInstance] !== 'undefined') {
+    if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE && objectType === CASBACnetStack.OBJECT_TYPE.BITSTRING_VALUE) {
         // The property has been defined.
         // Convert the property to the requested data type and return success
         bitValue = database[resultObjectType][objectInstance][resultPropertyIdentifier];
@@ -189,8 +200,10 @@ function GetPropertyBitString(deviceInstance, objectType, objectInstance, proper
     return false;
 }
 
-// This callback is used by the CAS BACnet stack to get a property of an object as a Boolean
+// Get Property callbacks
+// These callbacks is used by the CAS BACnet stack to get a property of an object
 // If the property is not defined then return false and the CAS BACnet stack will use a default value.
+
 function GetPropertyBool(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex) {
     console.log('GetPropertyBool - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex);
 
@@ -198,20 +211,20 @@ function GetPropertyBool(deviceInstance, objectType, objectInstance, propertyIde
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
     var resultObjectType = HelperGetKeyByValue(CASBACnetStack.OBJECT_TYPE, objectType).toLowerCase();
 
-    // Example of Priority array Null handling
+    // Example of getting Priority array Null handling
     if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.PRIORITY_ARRAY) {
         if (useArrayIndex) {
-            if (objectType === CASBACnetStack.OBJECT_TYPE.ANALOG_OUTPUT && typeof database[resultObjectType][objectInstance] !== 'undefined') {
+            if (objectType === CASBACnetStack.OBJECT_TYPE.ANALOG_OUTPUT) {
                 if (propertyArrayIndex <= CASBACnetStack.CONSTANTS.MAX_BACNET_PRIORITY) {
                     ref.set(value, 0, database[resultObjectType][objectInstance][priority_array_nulls][propertyArrayIndex - 1]);
                     return true;
                 }
-            } else if (objectType === CASBACnetStack.OBJECT_TYPE.BINARY_OUTPUT && typeof database[resultObjectType][objectInstance] !== 'undefined') {
+            } else if (objectType === CASBACnetStack.OBJECT_TYPE.BINARY_OUTPUT) {
                 if (propertyArrayIndex <= CASBACnetStack.CONSTANTS.MAX_BACNET_PRIORITY) {
                     ref.set(value, 0, database[resultObjectType][objectInstance][priority_array_nulls][propertyArrayIndex - 1]);
                     return true;
                 }
-            } else if (objectType == CASBACnetStack.OBJECT_TYPE.MULTI_STATE_OUTPUT && typeof database[resultObjectType][objectInstance] !== 'undefined') {
+            } else if (objectType == CASBACnetStack.OBJECT_TYPE.MULTI_STATE_OUTPUT) {
                 ref.set(value, 0, database[resultObjectType][objectInstance][priority_array_nulls][propertyArrayIndex - 1]);
                 return true;
             }
@@ -222,8 +235,6 @@ function GetPropertyBool(deviceInstance, objectType, objectInstance, propertyIde
     return false;
 }
 
-// This callback is used by the CAS BACnet stack to get a property of an object as a Character String.
-// If the property is not defined then return false and the CAS BACnet stack will use a default value.
 function GetPropertyCharacterString(deviceInstance, objectType, objectInstance, propertyIdentifier, value, valueElementCount, maxElementCount, encodingType, useArrayIndex, propertyArrayIndex) {
     console.log('GetPropertyCharacterString - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', maxElementCount: ', maxElementCount, ', encodingType: ', encodingType);
 
@@ -231,9 +242,9 @@ function GetPropertyCharacterString(deviceInstance, objectType, objectInstance, 
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
     var resultObjectType = HelperGetKeyByValue(CASBACnetStack.OBJECT_TYPE, objectType).toLowerCase();
 
-    // Example of object Name property
+    // Example of getting object Name property
     if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.OBJECT_NAME) {
-        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && typeof database[resultObjectType][objectInstance] !== 'undefined') {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
             // The property has been defined.
             // Convert the property to the requested data type and return success.
             charValue = database[resultObjectType][objectInstance][resultPropertyIdentifier];
@@ -245,9 +256,9 @@ function GetPropertyCharacterString(deviceInstance, objectType, objectInstance, 
         }
     }
 
-    // Example of Description property
+    // Example of getting Description property
     else if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.DESCRIPTION) {
-        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && typeof database[resultObjectType][objectInstance] !== 'undefined') {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
             // The property has been defined.
             // Convert the property to the requested data type and return success.
             charValue = database[resultObjectType][objectInstance][resultPropertyIdentifier];
@@ -259,9 +270,9 @@ function GetPropertyCharacterString(deviceInstance, objectType, objectInstance, 
         }
     }
 
-    // Example of Character String Value object Present Value property
+    // Example of getting Character String Value object Present Value property
     else if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE && objectType === CASBACnetStack.OBJECT_TYPE.CHARACTERSTRING_VALUE) {
-        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && typeof database[resultObjectType][objectInstance] !== 'undefined') {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
             // The property has been defined.
             // Convert the property to the requested data type and return success.
             charValue = database[resultObjectType][objectInstance][resultPropertyIdentifier];
@@ -273,9 +284,9 @@ function GetPropertyCharacterString(deviceInstance, objectType, objectInstance, 
         }
     }
 
-    // Example of Bit String Value object Bit Text property
+    // Example of getting Bit String Value object Bit Text property
     else if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.BITTEXT && objectType === CASBACnetStack.OBJECT_TYPE.BITSTRING_VALUE) {
-        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && useArrayIndex && typeof database[resultObjectType][objectInstance] !== 'undefined') {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && useArrayIndex) {
             if (propertyArrayIndex <= database[resultObjectType][objectInstance].present_value.length) {
                 charValue = database[resultObjectType][objectInstance].bittext[propertyArrayIndex - 1];
 
@@ -287,9 +298,9 @@ function GetPropertyCharacterString(deviceInstance, objectType, objectInstance, 
         }
     }
 
-    // Example of Multi State Input object State Text property
+    // Example of getting Multi State Input object State Text property
     else if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.STATETEXT && objectType === CASBACnetStack.OBJECT_TYPE.MULTI_STATE_INPUT) {
-        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && typeof database[resultObjectType][objectInstance] !== 'undefined') {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
             if (useArrayIndex && propertyArrayIndex > 0 && propertyArrayIndex <= database[resultObjectType][objectInstance].numberofstates) {
                 // 0 is the number of states
                 charValue = database[resultObjectType][objectInstance].statetext[propertyArrayIndex - 1];
@@ -316,7 +327,7 @@ function GetPropertyDate(deviceInstance, objectType, objectInstance, propertyIde
 
     // Example of getting Date Value object Present Value property
     if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE && objectType === CASBACnetStack.OBJECT_TYPE.DATE_VALUE) {
-        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && typeof database[resultObjectType][objectInstance] !== 'undefined') {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
             year.writeUInt8(database[resultObjectType][objectInstance].present_value.year, 0);
             month.writeUInt8(database[resultObjectType][objectInstance].present_value.month, 0);
             day.writeUInt8(database[resultObjectType][objectInstance].present_value.day, 0);
@@ -327,7 +338,7 @@ function GetPropertyDate(deviceInstance, objectType, objectInstance, propertyIde
 
     // Example of getting Device Local Date property
     else if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.LOCAL_DATE && objectType === CASBACnetStack.OBJECT_TYPE.DEVICE) {
-        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && typeof database[resultObjectType][objectInstance] !== 'undefined') {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
             var adjustedDate = new Date(Date.now() - database[resultObjectType][objectInstance].current_time_offset);
             year.writeUInt8(adjustedDate.getFullYear(), 0);
             month.writeUInt8(adjustedDate.getMonth(), 0);
@@ -339,7 +350,7 @@ function GetPropertyDate(deviceInstance, objectType, objectInstance, propertyIde
 
     // Example of getting DateTime Value object Present Value property
     else if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE && objectType === CASBACnetStack.OBJECT_TYPE.DATETIME_VALUE) {
-        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && typeof database[resultObjectType][objectInstance] !== 'undefined') {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
             year.writeUInt8(database[resultObjectType][objectInstance].present_value.year, 0);
             month.writeUInt8(database[resultObjectType][objectInstance].present_value.month, 0);
             day.writeUInt8(database[resultObjectType][objectInstance].present_value.day, 0);
@@ -354,9 +365,9 @@ function GetPropertyDate(deviceInstance, objectType, objectInstance, propertyIde
 
 function GetPropertyDouble(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex) {
     console.log('GetPropertyDouble - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex);
-    // Example of Large Analog value object PResent Value Property
+    // Example of getting Large Analog value object PResent Value Property
     if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE && objectType === CASBACnetStack.OBJECT_TYPE.LARGE_ANALOG_VALUE) {
-        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && typeof database[resultObjectType][objectInstance] !== 'undefined') {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
             value.writeDoubleLE(database[resultObjectType][objectInstance].present_value, 0);
             return true;
         }
@@ -375,22 +386,22 @@ function GetPropertyEnumerated(deviceInstance, objectType, objectInstance, prope
 
     // Check to see if we have defined this property in the database.
 
-    // Example of Binary Input / Value object Present Value property
+    // Example of getting Binary Input / Value object Present Value property
     if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE && objectType === CASBACnetStack.OBJECT_TYPE.BINARY_INPUT) {
-        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && typeof database[resultObjectType][objectInstance] !== 'undefined') {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
             ref.set(value, 0, database[resultObjectType][objectInstance].present_value);
             return true;
         }
     } else if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE && objectType === CASBACnetStack.OBJECT_TYPE.BINARY_VALUE) {
-        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && typeof database[resultObjectType][objectInstance] !== 'undefined') {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
             ref.set(value, 0, database[resultObjectType][objectInstance].present_value);
             return true;
         }
     }
 
-    // Example of Binary Output object Priority Array property
+    // Example of getting Binary Output object Priority Array property
     else if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.PRIORITY_ARRAY && objectType === CASBACnetStack.OBJECT_TYPE.BINARY_OUTPUT) {
-        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && typeof database[resultObjectType][objectInstance] !== 'undefined') {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
             if (useArrayIndex) {
                 if (propertyArrayIndex <= CASBACnetStack.CONSTANTS.MAX_BACNET_PRIORITY) {
                     ref.set(value, 0, database[resultObjectType][objectInstance].priority_array_values[propertyArrayIndex - 1]);
@@ -400,17 +411,17 @@ function GetPropertyEnumerated(deviceInstance, objectType, objectInstance, prope
         }
     }
 
-    // Example of Analog Input object Reliability property
+    // Example of getting Analog Input object Reliability property
     else if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.RELIABILITY && objectType === CASBACnetStack.OBJECT_TYPE.ANALOG_INPUT) {
-        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && typeof database[resultObjectType][objectInstance] !== 'undefined') {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
             value.writeUInt32LE(database[resultObjectType][objectInstance].reliability, 0);
             return true;
         }
     }
 
-    // Example of Network Port object FdBbmdAddress Host Type property
+    // Example of getting Network Port object FdBbmdAddress Host Type property
     else if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.FDBBMDADDRESS && objectType === CASBACnetStack.OBJECT_TYPE.NETWORK_PORT) {
-        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && typeof database[resultObjectType][objectInstance] !== 'undefined') {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
             value.writeUInt8(database[resultObjectType][objectInstance].fdbbmdaddress_host_type, 0);
             return true;
         }
@@ -423,7 +434,7 @@ function GetPropertyEnumerated(deviceInstance, objectType, objectInstance, prope
         return true;
     }
 
-    // Example of Units property
+    // Example of getting Units property
     if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.UNITS)
         if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && typeof database[resultObjectType][objectInstance][resultPropertyIdentifier] !== 'undefined') {
             // The property has been defined.
@@ -457,14 +468,13 @@ function GetPropertyOctetString(deviceInstance, objectType, objectInstance, prop
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
     var resultObjectType = HelperGetKeyByValue(CASBACnetStack.OBJECT_TYPE, objectType).toLowerCase();
 
-    // Example of Octet String Value object Present Value property
+    // Example of getting Octet String Value object Present Value property
     if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE && objectType === CASBACnetStack.OBJECT_TYPE.OCTETSTRING_VALUE) {
         if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && typeof database[resultObjectType][objectInstance][resultPropertyIdentifier] !== 'undefined') {
             if (database[resultObjectType][objectInstance].present_value.length > maxElementCount) {
                 console.log('Error: Octet String length exceeds maxElementCount');
                 return false;
-            }
-            else {
+            } else {
                 octetString = database[resultObjectType][objectInstance][resultPropertyIdentifier];
 
                 for (let i = 0; i < octetString.length; i++) {
@@ -476,9 +486,9 @@ function GetPropertyOctetString(deviceInstance, objectType, objectInstance, prop
         }
     }
 
-    // Example of Network Port object IP Address property
+    // Example of getting Network Port object IP Address property
     else if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.IPADDRESS && objectType === CASBACnetStack.OBJECT_TYPE.NETWORK_PORT) {
-        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && typeof database[resultObjectType][objectInstance] !== 'undefined') {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
             octetString = database[resultObjectType][objectInstance][resultPropertyIdentifier];
 
             for (let i = 0; i < octetString.length; i++) {
@@ -489,9 +499,9 @@ function GetPropertyOctetString(deviceInstance, objectType, objectInstance, prop
         }
     }
 
-    // Example of Network Port object IP Default Gateway property
+    // Example of getting Network Port object IP Default Gateway property
     else if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.IPDEFAULTGATEWAY && objectType === CASBACnetStack.OBJECT_TYPE.NETWORK_PORT) {
-        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && typeof database[resultObjectType][objectInstance] !== 'undefined') {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
             octetString = database[resultObjectType][objectInstance][resultPropertyIdentifier];
 
             for (let i = 0; i < octetString.length; i++) {
@@ -502,9 +512,9 @@ function GetPropertyOctetString(deviceInstance, objectType, objectInstance, prop
         }
     }
 
-    // Example of Network Port object IP Subnet Mask property
+    // Example of getting Network Port object IP Subnet Mask property
     else if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.IPSUBNETMASK && objectType === CASBACnetStack.OBJECT_TYPE.NETWORK_PORT) {
-        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && typeof database[resultObjectType][objectInstance] !== 'undefined') {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
             octetString = database[resultObjectType][objectInstance][resultPropertyIdentifier];
 
             for (let i = 0; i < octetString.length; i++) {
@@ -515,9 +525,9 @@ function GetPropertyOctetString(deviceInstance, objectType, objectInstance, prop
         }
     }
 
-    // Example of Network Port object IP DNS Server property
+    // Example of getting Network Port object IP DNS Server property
     else if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.IPDNSSERVER && objectType === CASBACnetStack.OBJECT_TYPE.NETWORK_PORT) {
-        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && typeof database[resultObjectType][objectInstance] !== 'undefined') {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
             if (useArrayIndex && propertyArrayIndex != 0 && propertyArrayIndex <= database[resultObjectType][objectInstance].ipdnsserver.length) {
                 octetString = database[resultObjectType][objectInstance].ipdnsserver[propertyArrayIndex - 1];
 
@@ -530,16 +540,16 @@ function GetPropertyOctetString(deviceInstance, objectType, objectInstance, prop
         }
     }
 
-    // Example of Network Port object FdBbmdAddress Host (as IP Address)
+    // Example of getting Network Port object FdBbmdAddress Host (as IP Address)
     else if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.FDBBMDADDRESS && objectType === CASBACnetStack.OBJECT_TYPE.NETWORK_PORT) {
-        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && typeof database[resultObjectType][objectInstance] !== 'undefined') {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
             octetString = database[resultObjectType][objectInstance].fdbbmdaddress_host_ip;
 
-                for (let i = 0; i < octetString.length; i++) {
-                    value.writeUInt8(octetString[i], i);
-                }
-                valueElementCount.writeUInt32LE(octetString.length, 0);
-                return true;
+            for (let i = 0; i < octetString.length; i++) {
+                value.writeUInt8(octetString[i], i);
+            }
+            valueElementCount.writeUInt32LE(octetString.length, 0);
+            return true;
         }
     }
 
@@ -554,9 +564,9 @@ function GetPropertyReal(deviceInstance, objectType, objectInstance, propertyIde
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
     var resultObjectType = HelperGetKeyByValue(CASBACnetStack.OBJECT_TYPE, objectType).toLowerCase();
 
-    // Example of Analog Output object Priority Array property
+    // Example of getting Analog Output object Priority Array property
     if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.PRIORITY_ARRAY && objectType === CASBACnetStack.objectType.ANALOG_OUTPUT) {
-        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && typeof database[resultObjectType][objectInstance] !== 'undefined') {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
             if (useArrayIndex && propertyArrayIndex <= CASBACnetStack.CONSTANTS.MAX_BACNET_PRIORITY) {
                 value.writeFloatLE(database[resultObjectType][objectInstance].priority_array_values[propertyArrayIndex - 1], 0);
                 return true;
@@ -573,14 +583,14 @@ function GetPropertyReal(deviceInstance, objectType, objectInstance, propertyIde
         ref.set(value, 0, valueToWrite);
         return true;
     }
-    
-    console.log('Error: GetPropertyReal failed')
+
+    console.log('Error: GetPropertyReal failed');
     return false;
 }
 
 function GetPropertySignedInteger(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex) {
     console.log('GetPropertySignedInteger - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex);
-    
+
     // Example to handle all other properties all at once without explicit checking for each type
     if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && typeof database[resultObjectType][objectInstance][resultPropertyIdentifier] !== 'undefined') {
         // The property has been defined.
@@ -591,7 +601,7 @@ function GetPropertySignedInteger(deviceInstance, objectType, objectInstance, pr
         return true;
     }
 
-    console.log('Error: GetPropertySignedInteger failed')
+    console.log('Error: GetPropertySignedInteger failed');
     return false;
 }
 
@@ -602,9 +612,9 @@ function GetPropertyTime(deviceInstance, objectType, objectInstance, propertyIde
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
     var resultObjectType = HelperGetKeyByValue(CASBACnetStack.OBJECT_TYPE, objectType).toLowerCase();
 
-    // Example of Time Value object Present Value property
+    // Example of gettingTime Value object Present Value property
     if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE && objectType === CASBACnetStack.OBJECT_TYPE.TIME_VALUE) {
-        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && typeof database[resultObjectType][objectInstance] !== 'undefined') {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
             hour.writeUInt8(database[resultObjectType][objectInstance].present_value.hour, 0);
             minute.writeUInt8(database[resultObjectType][objectInstance].present_value.minute, 0);
             second.writeUInt8(database[resultObjectType][objectInstance].present_value.second, 0);
@@ -613,9 +623,9 @@ function GetPropertyTime(deviceInstance, objectType, objectInstance, propertyIde
         }
     }
 
-    // Example of Device object Local Time property
+    // Example of getting Device Local Time property
     else if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.LOCAL_TIME && objectType === CASBACnetStack.OBJECT_TYPE.DEVICE) {
-        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && typeof database[resultObjectType][objectInstance] !== 'undefined') {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
             var adjustedTime = new Date(Date.now() - database[resultObjectType][objectInstance].current_time_offset);
             hour.writeUInt8(adjustedTime.getHours(), 0);
             minute.writeUInt8(adjustedTime.getMinutes(), 0);
@@ -625,9 +635,9 @@ function GetPropertyTime(deviceInstance, objectType, objectInstance, propertyIde
         }
     }
 
-    // Example of DateTime Value object Present Value property
+    // Example of getting DateTime Value object Present Value property
     if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE && objectType === CASBACnetStack.OBJECT_TYPE.DATETIME_VALUE) {
-        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && typeof database[resultObjectType][objectInstance] !== 'undefined') {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
             hour.writeUInt8(database[resultObjectType][objectInstance].present_value.hour, 0);
             minute.writeUInt8(database[resultObjectType][objectInstance].present_value.minute, 0);
             second.writeUInt8(database[resultObjectType][objectInstance].present_value.second, 0);
@@ -636,21 +646,20 @@ function GetPropertyTime(deviceInstance, objectType, objectInstance, propertyIde
         }
     }
 
-    console.log('Error: GetPropertyTime failed')
+    console.log('Error: GetPropertyTime failed');
     return false;
 }
 
 function GetPropertyUnsignedInteger(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex) {
     console.log('GetPropertyUnsignedInteger - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex);
-    
+
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
     var resultObjectType = HelperGetKeyByValue(CASBACnetStack.OBJECT_TYPE, objectType).toLowerCase();
 
-
-    // Example of Multi-State Output object Priority Array property
+    // Example of getting Multi-State Output object Priority Array property
     if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.PRIORITY_ARRAY && objectType === CASBACnetStack.OBJECT_TYPE.MULTI_STATE_OUTPUT) {
-        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && typeof database[resultObjectType][objectInstance] !== 'undefined') {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
             if (useArrayIndex && propertyArrayIndex <= CASBACnetStack.CONSTANTS.MAX_BACNET_PRIORITY) {
                 value.writeUInt32LE(database[resultObjectType][objectInstance].priority_array_values[propertyArrayIndex - 1], 0);
                 return true;
@@ -658,41 +667,42 @@ function GetPropertyUnsignedInteger(deviceInstance, objectType, objectInstance, 
         }
     }
 
-    // Example of Network Port object IP DNS Server Array Size property
+    // Example of getting Network Port object IP DNS Server Array Size property
     else if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.IPDNSSERVER && objectType === CASBACnetStack.OBJECT_TYPE.NETWORK_PORT) {
-        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && typeof database[resultObjectType][objectInstance] !== 'undefined') {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
             if (useArrayIndex && propertyArrayIndex === 0) {
-            value.writeUInt32LE(database[resultObjectType][objectInstance].ipdnsserver.length, 0);
-            return true;
-        }}
+                value.writeUInt32LE(database[resultObjectType][objectInstance].ipdnsserver.length, 0);
+                return true;
+            }
+        }
     }
 
-    // Example of Bit String Value object Bit Text Array Size property
+    // Example of getting Bit String Value object Bit Text Array Size property
     else if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.BITTEXT && objectType === CASBACnetStack.OBJECT_TYPE.BITSTRING_VALUE) {
-        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && typeof database[resultObjectType][objectInstance] !== 'undefined') {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
             if (useArrayIndex && propertyArrayIndex === 0) {
                 value.writeUInt32LE(database[resultObjectType][objectInstance].bittext.length, 0);
                 return true;
             }
         }
-        
     }
 
-    // Example of Network Port object FdBbmdAddress Port property
+    // Example of getting Network Port object FdBbmdAddress Port property
     else if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.FDBBMDADDRESS && objectType === CASBACnetStack.OBJECT_TYPE.NETWORK_PORT) {
         if (useArrayIndex && propertyArrayIndex === CASBACnetStack.CONSTANTS.FD_BBMD_ADDRESS_PORT) {
-            if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && typeof database[resultObjectType][objectInstance] !== 'undefined') {
+            if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
                 value.writeUInt32LE(database[resultObjectType][objectInstance].fdbbmdaddress_port, 0);
                 return true;
             }
-            
         }
     }
 
     // NOTE: DOUBLE CHECK WITH SPEC
-    // Example of Multi-State Input object State Text property (return numberOfStates when State Text property is requested in GetPropertyUnsignedInt())
+    // Example of getting Multi-State Input object State Text property (return numberOfStates when State Text property is requested in GetPropertyUnsignedInt())
     else if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.STATETEXT && objectType === CASBACnetStack.OBJECT_TYPE.MULTI_STATE_INPUT) {
-        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && typeof database[resultObjectType][objectInstance] !== 'undefined') {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
+            console.log('DEBUG: IMPORTANT: Check spec for GetPropertyUnsignedInteger - Multi-State Input object State Text property: 693');
+
             value.writeUInt32LE(database[resultObjectType][objectInstance].numberofstates, 0);
             return true;
         }
@@ -709,6 +719,349 @@ function GetPropertyUnsignedInteger(deviceInstance, objectType, objectInstance, 
     }
 
     console.log('Error: GetPropertyUnsignedInteger failed');
+    return false;
+}
+
+// Set Property callbacks
+// These callbacks is used by the CAS BACnet stack to set a property of an object
+// If the property could not be set then return false
+
+function SetPropertyBitString(deviceInstance, objectType, objectInstance, propertyIdentifier, value, length, useArrayIndex, propertyArrayIndex, priority, errorCode) {
+    console.log('SetPropertyBitString - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', value: ', value, ', length: ', length, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority', priority, ', errorCode: ', errorCode);
+
+    // Convert the enumerated values to human readable strings.
+    var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
+    var resultObjectType = HelperGetKeyByValue(CASBACnetStack.OBJECT_TYPE, objectType).toLowerCase();
+
+    // Example of setting Bit String Value object Present Value property
+    if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE && objectType === CASBACnetStack.OBJECT_TYPE.BITSTRING_VALUE) {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
+            if (length > database[resultObjectType][objectInstance].present_value.length) {
+                errorCode.writeUInt32LE(CASBACnetStack.ERROR_CODES.NO_SPACE_TO_WRITE_PROPERTY, 0);
+                return false;
+            } else {
+                for (let i = 0; i < length; i++) {
+                    let boolToWrite = value.readUInt8(i) === 1 ? true : false;
+                    database[resultObjectType][objectInstance].present_value[i] = boolToWrite;
+                    console.log('DEBUG: value read from pointer: ', value.readUInt8(i), 'value of bool written: ', boolToWrite);
+                }
+                return true;
+            }
+        }
+    }
+
+    console.log('Error: SetPropertyBitString failed');
+    return false;
+}
+
+function SetPropertyBool(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex, priority, errorCode) {
+    console.log('SetPropertyBool - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', value: ', value, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ': errorCode, ', errorCode);
+
+    console.log('Error: SetPropertyBool failed');
+    return false;
+}
+
+function SetPropertyCharString(deviceInstance, objectType, objectInstance, propertyIdentifier, value, length, encodingType, useArrayIndex, propertyArrayIndex, priority, errorCode) {
+    console.log('SetPropertyCharString - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', value: ', value, ', length: ', length, ', encodingType: ', encodingType, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ': errorCode, ', errorCode);
+
+    // Convert the enumerated values to human readable strings.
+    var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
+    var resultObjectType = HelperGetKeyByValue(CASBACnetStack.OBJECT_TYPE, objectType).toLowerCase();
+
+    // Example of setting CharString Value object Present Value property
+    if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE && objectType === CASBACnetStack.OBJECT_TYPE.CHARACTERSTRING_VALUE) {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
+            database[resultObjectType][objectInstance].present_value = CreateStringFromCharPointer(value, length);
+            return true;
+        }
+    }
+
+    // Example of setting Device Description property
+    if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.DESCRIPTION && objectType === CASBACnetStack.OBJECT_TYPE.DEVICE) {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
+            database[resultObjectType][objectInstance].description = CreateStringFromCharPointer(value, length);
+            return true;
+        }
+    }
+
+    // Example of setting Device Object Name property
+    if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.OBJECT_NAME && objectType === CASBACnetStack.OBJECT_TYPE.DEVICE) {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
+            database[resultObjectType][objectInstance].present_value = CreateStringFromCharPointer(value, length);
+            return true;
+        }
+    }
+
+    console.log('Error: SetPropertyCharString failed');
+    return false;
+}
+
+function SetPropertyDate(deviceInstance, objectType, objectInstance, propertyIdentifier, year, month, day, weekday, useArrayIndex, propertyArrayIndex, priority, errorCode) {
+    console.log('SetPropertyDate - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', year: ', year, ', month: ', month, ', day: ', day, ', weekday: ', weekday, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ': errorCode, ', errorCode);
+
+    // Convert the enumerated values to human readable strings.
+    var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
+    var resultObjectType = HelperGetKeyByValue(CASBACnetStack.OBJECT_TYPE, objectType).toLowerCase();
+
+    // Example of setting Date Value object Present Value property
+    if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE && objectType === CASBACnetStack.OBJECT_TYPE.DATE_VALUE) {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
+            database[resultObjectType][objectInstance].present_value.year = year;
+            database[resultObjectType][objectInstance].present_value.month = month;
+            database[resultObjectType][objectInstance].present_value.day = day;
+            database[resultObjectType][objectInstance].present_value.weekday = weekday;
+            return true;
+        }
+    }
+
+    console.log('Error: SetPropertyDate failed');
+    return false;
+}
+
+function SetPropertyDouble(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex, priority, errorCode) {
+    console.log('SetPropertyDouble - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', value: ', value, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ': errorCode, ', errorCode);
+
+    // Convert the enumerated values to human readable strings.
+    var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
+    var resultObjectType = HelperGetKeyByValue(CASBACnetStack.OBJECT_TYPE, objectType).toLowerCase();
+
+    // Example of setting Large Analog Value object Present Value property
+    if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE && objectType === CASBACnetStack.OBJECT_TYPE.LARGE_ANALOG_VALUE) {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
+            database[resultObjectType][objectInstance].present_value = value;
+            return true;
+        }
+    }
+
+    console.log('Error: SetPropertyDouble failed');
+    return false;
+}
+
+function SetPropertyEnumerated(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex, priority, errorCode) {
+    console.log('SetPropertyEnumerated - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', value: ', value, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ': errorCode, ', errorCode);
+
+    // Convert the enumerated values to human readable strings.
+    var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
+    var resultObjectType = HelperGetKeyByValue(CASBACnetStack.OBJECT_TYPE, objectType).toLowerCase();
+
+    // Example of setting Binary Value object Present Value property
+    if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE && objectType === CASBACnetStack.OBJECT_TYPE.BINARY_VALUE) {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
+            database[resultObjectType][objectInstance].present_value = value;
+            return true;
+        }
+    }
+
+    // Example of setting Binary Output object Present Value / Priority Array property
+    else if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE && objectType === CASBACnetStack.OBJECT_TYPE.BINARY_OUTPUT) {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
+            database[resultObjectType][objectInstance].priority_array_nulls[priority - 1] = false;
+            database[resultObjectType][objectInstance].priority_array_values[priority - 1] = value;
+            return true;
+        }
+    }
+
+    console.log('Error: SetPropertyEnumerated failed');
+    return false;
+}
+
+function SetPropertyNull(deviceInstance, objectType, objectInstance, propertyIdentifier, useArrayIndex, propertyArrayIndex, priority, errorCode) {
+    console.log('SetPropertyNull - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier, :', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ', errorCode: ', errorCode);
+
+    // Convert the enumerated values to human readable strings.
+    var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
+    var resultObjectType = HelperGetKeyByValue(CASBACnetStack.OBJECT_TYPE, objectType).toLowerCase();
+
+    // Example of setting Analog, Binary and Multi-State Outputs Present Value / Priority Array property to Null
+    if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE) {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
+            database[resultObjectType][objectInstance].priority_array_nulls[priority - 1] = true;
+            database[resultObjectType][objectInstance].priority_array_values[priority - 1] = 0;
+            return true;
+        }
+    }
+
+    console.log('Error: SetPropertyNull failed');
+    return false;
+}
+
+function SetPropertyOctetString(deviceInstance, objectType, objectInstance, propertyIdentifier, value, length, useArrayIndex, propertyArrayIndex, priority, errorCode) {
+    console.log('SetPropertyOctetString - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', value: ', value, ', length: ', length, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ', errorCode: ', errorCode);
+
+    // Convert the enumerated values to human readable strings.
+    var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
+    var resultObjectType = HelperGetKeyByValue(CASBACnetStack.OBJECT_TYPE, objectType).toLowerCase();
+
+    // Example of setting Octet String Value object Present Value property
+    if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE && objectType === CASBACnetStack.OBJECT_TYPE.OCTETSTRING_VALUE) {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
+            if (length > database[resultObjectType][objectInstance].present_value.length) {
+                errorCode.writeUInt32LE(CASBACnetStack.ERROR_CODES.NO_SPACE_TO_WRITE_PROPERTY, 0);
+                return false;
+            } else {
+                for (let offset = 0; offset < length; offset++) {
+                    database[resultObjectType][objectInstance].present_value[offset] = value.readUInt8(offset);
+                }
+                return true;
+            }
+        }
+    }
+
+    // Example of setting Network Port object FdBbmdAddress Host IP property
+    else if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.FDBBMDADDRESS && objectType === CASBACnetStack.OBJECT_TYPE.NETWORK_PORT) {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
+            if (useArrayIndex && propertyArrayIndex === CASBACnetStack.CONSTANTS.FD_BBMD_ADDRESS_HOST) {
+                if (length > 4) {
+                    errorCode.writeUInt32LE(CASBACnetStack.ERROR_CODES.VALUE_OUT_OF_RANGE, 0);
+                    return false;
+                } else {
+                    for (let offset = 0; offset < 4; offset++) {
+                        database[resultObjectType][objectInstance].fdbbmdaddress_host_ip[offset] = value.readUInt8(offset);
+                    }
+                    database[resultObjectType][objectInstance].changespending = true;
+                    return true;
+                }
+            }
+        }
+    }
+
+    console.log('Error: SetPropertyOctetString failed');
+    return false;
+}
+
+// TODO: Real, SignedInt, Time, UnsignedInt
+function SetPropertyReal(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex, priority, errorCode) {
+    console.log('SetPropertyReal - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', value: ', value, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ', errorCode: ', errorCode);
+
+    // Convert the enumerated values to human readable strings.
+    var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
+    var resultObjectType = HelperGetKeyByValue(CASBACnetStack.OBJECT_TYPE, objectType).toLowerCase();
+
+    // Example of setting Analog Value object Min/Max Present Value property
+    if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE && objectType === CASBACnetStack.OBJECT_TYPE.ANALOG_VALUE) {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
+            if (value < database[resultObjectType][objectInstance].minpresvalue || value > database[resultObjectType][objectInstance].maxpresvalue) {
+                errorCode.writeUInt32LE(CASBACnetStack.ERROR_CODES.VALUE_OUT_OF_RANGE, 0);
+                return false;
+            } else {
+                database[resultObjectType][objectInstance].present_value = value;
+                return true;
+            }
+        }
+    }
+
+    // Example of setting Analog Output object Present Value / Priority Array property
+    else if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE && objectType === CASBACnetStack.OBJECT_TYPE.ANALOG_OUTPUT) {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
+            database[resultObjectType][objectInstance].priority_array_nulls[priority - 1] = false;
+            database[resultObjectType][objectInstance].priority_array_values[priority - 1] = value;
+            return true;
+        }
+    }
+
+    // Example of setting Analog Input object Cov Increment
+    else if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.COVINCREMENT && objectType === CASBACnetStack.OBJECT_TYPE.ANALOG_INPUT) {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
+            database[resultObjectType][objectInstance].covincrement = value;
+            return true;
+        }
+    }
+
+    console.log('Error: SetPropertyReal failed');
+    return false;
+}
+
+function SetPropertySignedInteger(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex, priority, errorCode) {
+    console.log('SetPropertySignedInteger - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', value: ', value, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ', errorCode: ', errorCode);
+
+    // Convert the enumerated values to human readable strings.
+    var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
+    var resultObjectType = HelperGetKeyByValue(CASBACnetStack.OBJECT_TYPE, objectType).toLowerCase();
+
+    // Example of setting Integer Value object Present Value property
+    if (propertyIdentifier == CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE && objectType == CASBACnetStack.OBJECT_TYPE.INTEGER_VALUE) {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
+            database[resultObjectType][objectInstance].present_value = value;
+            return true;
+        }
+    }
+
+    // Example of setting Device UTC Offset property
+    else if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.UTC_OFFSET && objectType === CASBACnetStack.OBJECT_TYPE.DEVICE) {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
+            if (value < -1440 || value > 1440) {
+                errorCode.writeUInt32LE(CASBACnetStack.ERROR_CODES.VALUE_OUT_OF_RANGE, 0);
+                return false;
+            } else {
+                database[resultObjectType][objectInstance][resultPropertyIdentifier] = value;
+                return true;
+            }
+        }
+    }
+
+    console.log('Error: SetPropertySignedInteger failed');
+    return false;
+}
+
+function SetPropertyTime(deviceInstance, objectType, objectInstance, propertyIdentifier, hour, minute, second, hundrethSeconds, useArrayIndex, propertyArrayIndex, priority, errorCode) {
+    console.log('SetPropertyTime - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', hour: ', hour, ', minute: ', minute, ', second: ', second, ', hundrethSeconds: ', hundrethSeconds, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ', errorCode: ', errorCode);
+
+    // Convert the enumerated values to human readable strings.
+    var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
+    var resultObjectType = HelperGetKeyByValue(CASBACnetStack.OBJECT_TYPE, objectType).toLowerCase();
+
+    // Example of setting Time Value object Present Value property
+    if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE && objectType === CASBACnetStack.OBJECT_TYPE.TIME_VALUE) {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
+            database[resultObjectType][objectInstance][resultPropertyIdentifier].hour = hour;
+            database[resultObjectType][objectInstance][resultPropertyIdentifier].minute = minute;
+            database[resultObjectType][objectInstance][resultPropertyIdentifier].second = second;
+            database[resultObjectType][objectInstance][resultPropertyIdentifier].hundrethSeconds = hundrethSeconds;
+            return true;
+        }
+    }
+
+    console.log('Error: SetPropertyTime failed');
+    return false;
+}
+
+function SetPropertyUnsignedInteger(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex, priority, errorCode) {
+    console.log('SetPropertyUnsignedInteger - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', value: ', value, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ', errorCode: ', errorCode);
+
+    // Convert the enumerated values to human readable strings.
+    var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
+    var resultObjectType = HelperGetKeyByValue(CASBACnetStack.OBJECT_TYPE, objectType).toLowerCase();
+
+    // Example of setting Multi-State Output object Prsent Value / Priority Array property
+    if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE && objectType === CASBACnetStack.OBJECT_TYPE.MULTI_STATE_OUTPUT) {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
+            database[resultObjectType][objectInstance].priority_array_nulls[priority - 1] = false;
+            database[resultObjectType][objectInstance].priority_array_values[priority - 1] = value;
+            return true;
+        }
+    }
+
+    // Example of setting Network Port object FdBbmdAddress Port
+    else if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.FDBBMDADDRESS && objectType === CASBACnetStack.OBJECT_TYPE.NETWORK_PORT) {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
+            if (useArrayIndex && propertyArrayIndex === CASBACnetStack.CONSTANTS.FD_BBMD_ADDRESS_PORT) {
+                database[resultObjectType][objectInstance].fdbbmdaddress_port = value;
+                database[resultObjectType][objectInstance].changespending = true;
+                return true;
+            }
+        }
+    }
+
+    // Example of setting Network Port object FdSubscriptionLifetime
+    else if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.FDSUBSCRIPTIONLIFETIME && objectType === CASBACnetStack.OBJECT_TYPE.NETWORK_PORT) {
+        if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
+            database[resultObjectType][objectInstance].fdsubscriptionlifetime = value;
+            database[resultObjectType][objectInstance].changespending = true;
+            return true;
+        }
+    }
+
+    console.log('Error: SetPropertyUnsignedInteger failed');
     return false;
 }
 
