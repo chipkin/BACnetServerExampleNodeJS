@@ -6,7 +6,9 @@
     "dependencies": {
         "dequeue": "^1.0.5",
         "ffi-napi": "^4.0.3",
-        "ref-napi": "^3.0.3"
+        "network": "^0.6.1",
+        "ref-napi": "^3.0.3",
+        "winston": "^3.6.0"
     },
     "scripts": {
         "start": "node program.js"

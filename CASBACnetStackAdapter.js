@@ -37,14 +37,14 @@ module.exports = {
         // Device Setup Functions
         // ==============================================================================================
         'BACnetStack_AddDevice': ['bool', ['uint32']],
-        'BACnetStack_AddVirtualNetwork': ['uint32', 'uint16', 'uint32'],
-        'BACnetStack_AddDeviceToVirtualNetwork': ['uint32', 'uint16'],
+        'BACnetStack_AddVirtualNetwork': ['bool', ['uint32', 'uint16', 'uint32']],
+        'BACnetStack_AddDeviceToVirtualNetwork': ['bool', ['uint32', 'uint16']],
         'BACnetStack_AddObject': ['bool', ['uint32', 'uint16', 'uint32']],
         'BACnetStack_AddNetworkPortObject': ['bool', ['uint32', 'uint16', 'uint8', 'uint8', 'uint32']],
-        'BACnetStack_AddTrendLogObject': ['bool', ['uint32', 'uint32', 'utin16', 'uint32', 'uint32', 'uint32', 'bool', 'uint32']],
+        'BACnetStack_AddTrendLogObject': ['bool', ['uint32', 'uint32', 'uint16', 'uint32', 'uint32', 'uint32', 'bool', 'uint32']],
         'BACnetStack_AddTrendLogMultipleObject': ['bool', ['uint32', 'uint32', 'uint32']],
         'BACnetStack_AddElevatorGroupObject': ['bool', ['uint32', 'uint32', 'uint32', 'uint8', 'bool', 'bool']],
-        'BAcnetStack_AddLiftOrEscalatorObject': ['bool', ['uint32', 'uint16', 'uint32', 'uint32', 'uint8', 'uint8']],
+        'BACnetStack_AddLiftOrEscalatorObject': ['bool', ['uint32', 'uint16', 'uint32', 'uint32', 'uint8', 'uint8']],
         'BACnetStack_AddNotificationClassObject': ['bool', ['uint32', 'uint32', 'uint8', 'uint8', 'uint8', 'bool', 'bool', 'bool']],
 
         // Property Setup Functions
@@ -80,7 +80,7 @@ module.exports = {
         // ==============================================================================================
         'BACnetStack_EnableAlarmsAndEventsForObject': ['bool', ['uint32', 'uint16', 'uint32', 'uint32', 'uint8', 'bool', 'bool', 'bool', 'bool']],
         'BACnetStack_SetIntrinsicOutOfRangeAlgorithm': ['bool', ['uint32', 'uint16', 'uint32', 'float', 'float', 'float', 'bool', 'bool', 'uint32', 'bool', 'uint32', 'bool']],        
-        'BACnetStack_SetIntrinsicChangeOfStateAlgorithmbool': ['bool', ['uint32', 'uint16', 'uint32', 'bool', 'uint32', 'bool', 'uint32', 'bool']],        
+        'BACnetStack_SetIntrinsicChangeOfStateAlgorithmBool': ['bool', ['uint32', 'uint16', 'uint32', 'bool', 'uint32', 'bool', 'uint32', 'bool']],        
         'BACnetStack_SetFaultOutOfRangeAlgorithmReal': ['bool', ['uint32', 'uint16', 'uint32', 'float', 'float', 'bool']],        
         'BACnetStack_SetFaultListedAlgorithm': ['bool', ['uint32', 'uint16', 'uint32', 'bool']],
 
@@ -118,8 +118,6 @@ module.exports = {
         'BACnetStack_RegisterCallbackGetSequenceLiftRegisteredCarCall': ['void', ['pointer']],
         'BACnetStack_RegisterCallbackGetSequenceLiftAssignedLandingCall': ['void', ['pointer']],
         'BACnetStack_RegisterCallbackGetSequenceLiftLandingDoorStatus': ['void', ['pointer']],
-        'BACnetStack_RegisterCallbackGet': ['void', ['pointer']],
-
 
         // Set Data Functions
         'BACnetStack_RegisterCallbackSetPropertyBitString': ['void', ['pointer']],
@@ -1079,12 +1077,46 @@ module.exports = {
     },
 
     CONSTANTS: {
+        // General Constants
+        NETWORK_PORT_LOWEST_PROTOCOL_LAYER: 4194303,
+
         // Priority Array
         MAX_BACNET_PRIORITY: 16,
 
         // Network Port FdBbmdAddressOffset
         FD_BBMD_ADDRESS_HOST: 1,
-        FD_BBMD_ADDRESS_PORT: 2
+        FD_BBMD_ADDRESS_PORT: 2,
+
+        // Network Types
+        NETWORK_TYPE_BACNET_IP: 0,
+        NETWORK_TYPE_IPV4: 5,
+
+        // Protocol Level
+        PROTOCOL_LEVEL_BACNET_APPLICATION: 2,
+
+        // Trend Log Buffer Size
+        MAX_TREND_LOG_MAX_BUFFER_SIZE: 100,
+
+        // Reinitialized State
+        REINITIALIZED_STATE_WARM_START: 1,
+        REINITIALIZED_STATE_ACTIVATE_CHANGES: 7
+    },
+
+    DATA_TYPES: {
+        NULL: 0,
+	    BOOLEAN: 1,
+	    UNSIGNED_INTEGER: 2,
+	    SIGNED_INTEGER: 3,
+	    REAL: 4,
+	    DOUBLE: 5,
+	    OCTET_STRING: 6,
+	    CHARACTER_STRING: 7,
+	    BIT_STRING: 8,
+	    ENUMERATED: 9,
+	    DATE: 10,
+	    TIME: 11,
+	    BACNET_OBJECT_IDENTIFIER: 12,
+	    DATETIME: 27
     },
 
     ERROR_CODES: {

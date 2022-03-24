@@ -184,5 +184,11 @@
                 "hundrethSeconds": 5
             }
         }
-    }
+    },
+    "trend_log_multiple": {
+        "21": {
+            "object_name": "TrendLogMultiple Wallace"
+        }
+    },
+    "created_analog_value": {}
 }

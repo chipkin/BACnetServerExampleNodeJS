@@ -13,8 +13,15 @@ var ffi = require('ffi-napi'); // DLL interface. https://github.com/node-ffi/nod
 var ref = require('ref-napi'); // DLL Data types. https://github.com/TooTallNate/ref
 var dequeue = require('dequeue'); // Creates a FIFO buffer. https://github.com/lleo/node-dequeue/
 const dgram = require('dgram'); // UDP server
+var network = require('network');
 const { truncate } = require('fs');
 const { privateDecrypt } = require('crypto');
+const { rejects } = require('assert');
+
+// Logger
+const loggerObj = require('./logging');
+const { data } = require('./logging');
+const logger = loggerObj.child({ label: 'BACnetServerNodeJSExample' });
 
 // Settings
 const SETTING_BACNET_PORT = 47808; // Default BACnet IP UDP Port.
@@ -70,7 +77,7 @@ var FuncPtrCallbackDeleteObject = ffi.Callback('bool', ['uint32', 'uint16', 'uin
 var FuncPtrCallbackReinitializeDevice = ffi.Callback('bool', ['uint32', 'uint32', 'uint8*', 'uint32', 'uint32*'], ReinitializeDevice);
 var FuncPtrCallbackDeviceCommunicationControl = ffi.Callback('bool', ['uint32', 'uint8', 'uint8*', 'uint8', 'bool', 'uint16', 'uint32*'], DeviceCommunicationControl);
 var FuncPtrHookTextMessage = ffi.Callback('bool', ['uint32', 'bool', 'uint32', 'uint8*', 'uint32', 'uint8', 'uint8*', 'uint32', 'uint8*', 'uint8', 'uint8', 'uint16', 'uint8*', 'uint8', 'uint16*', 'uint16*'], HookTextMessage);
-var FuncPtrHookLogDebugMessage = ffi.Callback('void', ['uint8*', 'uint16', 'uint8'], LogDebugMessage);
+var FuncPtrCallbackLogDebugMessage = ffi.Callback('void', ['uint8*', 'uint16', 'uint8'], LogDebugMessage);
 
 // Helper Functions
 function CreateStringFromCharPointer(charPointer, length) {
@@ -78,7 +85,7 @@ function CreateStringFromCharPointer(charPointer, length) {
     for (let offset = 0; offset < length; offset++) {
         workingString += String.fromCharCode(charPointer.readUInt8(offset));
     }
-    console.log('DEBUG: String creation output: ', workingString);
+    logger.debug('String creation output: ', workingString);
     return workingString;
 }
 
@@ -88,7 +95,7 @@ function CallbackSendMessage(message, messageLength, connectionString, connectio
     var newConnectionString = ref.reinterpret(connectionString, connectionStringLength, 0);
     var host = newConnectionString.readUInt8(0) + '.' + newConnectionString.readUInt8(1) + '.' + newConnectionString.readUInt8(2) + '.' + newConnectionString.readUInt8(3);
     var port = Number(newConnectionString.readUInt8(5)) * 255 + Number(newConnectionString.readUInt8(4));
-    console.log('CallbackSendMessage. messageLength:', messageLength, ', host: ', host, ', port:', port);
+    logger.debug('CallbackSendMessage. messageLength:', messageLength, ', host: ', host, ', port:', port);
 
     // copy the message to the sendBuffer.
     var newMessage = ref.reinterpret(message, messageLength, 0);
@@ -100,10 +107,10 @@ function CallbackSendMessage(message, messageLength, connectionString, connectio
     // Send the message.
     server.send(sendBuffer, port, host, function (error) {
         if (error) {
-            console.error('Error: Could not send message');
+            logger.error('Error: Could not send message');
             server.close();
         } else {
-            console.log('CallbackSendMessage. Length:', newMessage.length);
+            logger.debug('CallbackSendMessage. Length:', newMessage.length);
             return newMessage.length;
         }
     });
@@ -121,17 +128,17 @@ function CallbackRecvMessage(message, maxMessageLength, receivedConnectionString
 
         const recvedMessage = msg[0];
 
-        console.log('\nCallbackRecvMessage Got message. Length:', msg[0].length, ', From:', msg[1], ', Message: ', msg[0].toString('hex'));
+        logger.debug('\nCallbackRecvMessage Got message. Length:', msg[0].length, ', From:', msg[1], ', Message: ', msg[0].toString('hex'));
 
         if (msg[0].length > maxMessageLength) {
-            console.error('Error: Message too large to fit into buffer on Recv. Dumping message. msg[0].length=', msg[0].length, ', maxMessageLength=', maxMessageLength);
+            logger.error('Error: Message too large to fit into buffer on Recv. Dumping message. msg[0].length=', msg[0].length, ', maxMessageLength=', maxMessageLength);
             return 0;
         }
 
         // Received Connection String
         // --------------------------------------------------------------------
 
-        console.log('maxConnectionStringLength:', maxConnectionStringLength);
+        logger.debug('maxConnectionStringLength:', maxConnectionStringLength);
 
         // Reinterpret the receivedConnectionString parameter with a the max buffer size.
         var newReceivedConnectionString = ref.reinterpret(receivedConnectionString, maxConnectionStringLength, 0);
@@ -175,7 +182,7 @@ function HelperGetKeyByValue(object, value) {
 // This callback is used by the CAS BACnet stack to get a property of an object as a string.
 // If the property is not defined then return false and the CAS BACnet stack will use a default value.
 function GetPropertyBitString(deviceInstance, objectType, objectInstance, propertyIdentifier, value, valueElementCount, maxElementCount, useArrayIndex, propertyArrayIndex) {
-    console.log('GetPropertyBool - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex);
+    logger.debug('GetPropertyBool - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex);
 
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
@@ -196,7 +203,7 @@ function GetPropertyBitString(deviceInstance, objectType, objectInstance, proper
     }
 
     // Could not find the value in the database.
-    console.log('Error: GetPropertyBitString failed');
+    logger.error('GetPropertyBitString failed');
     return false;
 }
 
@@ -205,7 +212,7 @@ function GetPropertyBitString(deviceInstance, objectType, objectInstance, proper
 // If the property is not defined then return false and the CAS BACnet stack will use a default value.
 
 function GetPropertyBool(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex) {
-    console.log('GetPropertyBool - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex);
+    logger.debug('GetPropertyBool - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex);
 
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
@@ -231,12 +238,12 @@ function GetPropertyBool(deviceInstance, objectType, objectInstance, propertyIde
         }
     }
 
-    console.log('Error: GetPropertyBool failed');
+    logger.error('GetPropertyBool failed');
     return false;
 }
 
 function GetPropertyCharacterString(deviceInstance, objectType, objectInstance, propertyIdentifier, value, valueElementCount, maxElementCount, encodingType, useArrayIndex, propertyArrayIndex) {
-    console.log('GetPropertyCharacterString - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', maxElementCount: ', maxElementCount, ', encodingType: ', encodingType);
+    logger.debug('GetPropertyCharacterString - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', maxElementCount: ', maxElementCount, ', encodingType: ', encodingType);
 
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
@@ -248,6 +255,15 @@ function GetPropertyCharacterString(deviceInstance, objectType, objectInstance, 
             // The property has been defined.
             // Convert the property to the requested data type and return success.
             charValue = database[resultObjectType][objectInstance][resultPropertyIdentifier];
+
+            var newValue = ref.reinterpret(value, maxElementCount, 0);
+            newValue.write(charValue, 0, 'utf8');
+            valueElementCount.writeInt32LE(charValue.length, 0);
+            return true;
+        }
+        // Check for created Analog Value objects
+        else if (objectType === CASBACnetStack.OBJECT_TYPE.ANALOG_VALUE && typeof database['created_analog_value'][objectInstance] !== 'undefined') {
+            charValue = database['created_analog_value'][objectInstance][resultPropertyIdentifier];
 
             var newValue = ref.reinterpret(value, maxElementCount, 0);
             newValue.write(charValue, 0, 'utf8');
@@ -314,12 +330,12 @@ function GetPropertyCharacterString(deviceInstance, objectType, objectInstance, 
     }
 
     // Could not find the value in the database.
-    console.log('Error: GetPropertyCharacterString failed');
+    logger.error('GetPropertyCharacterString failed');
     return false;
 }
 
 function GetPropertyDate(deviceInstance, objectType, objectInstance, propertyIdentifier, year, month, day, weekday, useArrayIndex, propertyArrayIndex) {
-    console.log('GetPropertyDate - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex);
+    logger.debug('GetPropertyDate - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex);
 
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
@@ -359,12 +375,12 @@ function GetPropertyDate(deviceInstance, objectType, objectInstance, propertyIde
         }
     }
 
-    console.log('Error: GetPropertyDate failed');
+    logger.error('GetPropertyDate failed');
     return false;
 }
 
 function GetPropertyDouble(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex) {
-    console.log('GetPropertyDouble - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex);
+    logger.debug('GetPropertyDouble - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex);
     // Example of getting Large Analog value object PResent Value Property
     if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE && objectType === CASBACnetStack.OBJECT_TYPE.LARGE_ANALOG_VALUE) {
         if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
@@ -373,12 +389,12 @@ function GetPropertyDouble(deviceInstance, objectType, objectInstance, propertyI
         }
     }
 
-    console.log('Error: GetPropertyDouble failed');
+    logger.error('GetPropertyDouble failed');
     return false;
 }
 
 function GetPropertyEnumerated(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex) {
-    console.log('GetPropertyEnumerated - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex);
+    logger.debug('GetPropertyEnumerated - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex);
 
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
@@ -429,7 +445,7 @@ function GetPropertyEnumerated(deviceInstance, objectType, objectInstance, prope
 
     // Debug for customer
     else if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.SYSTEMSTATUS && objectType === CASBACnetStack.OBJECT_TYPE.DEVICE) {
-        console.log('DEBUG: Device:System Status');
+        logger.debug('DEBUG: Device:System Status');
         value.writeUInt32LE(database[resultObjectType][objectInstance].systemstatus, 0);
         return true;
     }
@@ -449,7 +465,7 @@ function GetPropertyEnumerated(deviceInstance, objectType, objectInstance, prope
                     // Update the string to use the value instead.
                     valueToWrite = CASBACnetStack.ENGINEERING_UNITS[valueToWrite.toUpperCase()];
                 } else {
-                    console.log('Error: Unknown unit string. can not convert to enumerated value. value:', valueToWrite);
+                    logger.error('Unknown unit string. can not convert to enumerated value. value:', valueToWrite);
                     return false;
                 }
             }
@@ -457,12 +473,12 @@ function GetPropertyEnumerated(deviceInstance, objectType, objectInstance, prope
             return true;
         }
 
-    console.log('Error: GetPropertyEnumerated failed');
+    logger.error('GetPropertyEnumerated failed');
     return false;
 }
 
 function GetPropertyOctetString(deviceInstance, objectType, objectInstance, propertyIdentifier, value, valueElementCount, maxElementCount, encodingType, useArrayIndex, propertyArrayIndex) {
-    console.log('GetPropertyOctetString - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex);
+    logger.debug('GetPropertyOctetString - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex);
 
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
@@ -472,7 +488,7 @@ function GetPropertyOctetString(deviceInstance, objectType, objectInstance, prop
     if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE && objectType === CASBACnetStack.OBJECT_TYPE.OCTETSTRING_VALUE) {
         if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && typeof database[resultObjectType][objectInstance][resultPropertyIdentifier] !== 'undefined') {
             if (database[resultObjectType][objectInstance].present_value.length > maxElementCount) {
-                console.log('Error: Octet String length exceeds maxElementCount');
+                logger.error('Octet String length exceeds maxElementCount');
                 return false;
             } else {
                 octetString = database[resultObjectType][objectInstance][resultPropertyIdentifier];
@@ -553,12 +569,12 @@ function GetPropertyOctetString(deviceInstance, objectType, objectInstance, prop
         }
     }
 
-    console.log('Error: GetPropertyOctetString failed');
+    logger.error('GetPropertyOctetString failed');
     return false;
 }
 
 function GetPropertyReal(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex) {
-    console.log('GetPropertyReal - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex);
+    logger.debug('GetPropertyReal - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex);
 
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
@@ -574,6 +590,12 @@ function GetPropertyReal(deviceInstance, objectType, objectInstance, propertyIde
         }
     }
 
+    // Check if this is for a created Analog Value
+    if (propertyIdentifier === CASBACnetStack.OBJECT_TYPE.ANALOG_VALUE && typeof database['created_analog_value'][objectInstance.toString()] !== 'undefined') {
+        value.writeFloatLE(database['created_analog_value'][objectInstance].present_value, 0);
+        return true;
+    }
+
     // Example to handle all other properties all at once without explicit checking for each type
     if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && typeof database[resultObjectType][objectInstance][resultPropertyIdentifier] !== 'undefined') {
         // The property has been defined.
@@ -584,12 +606,12 @@ function GetPropertyReal(deviceInstance, objectType, objectInstance, propertyIde
         return true;
     }
 
-    console.log('Error: GetPropertyReal failed');
+    logger.error('GetPropertyReal failed');
     return false;
 }
 
 function GetPropertySignedInteger(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex) {
-    console.log('GetPropertySignedInteger - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex);
+    logger.debug('GetPropertySignedInteger - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex);
 
     // Example to handle all other properties all at once without explicit checking for each type
     if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && typeof database[resultObjectType][objectInstance][resultPropertyIdentifier] !== 'undefined') {
@@ -601,12 +623,12 @@ function GetPropertySignedInteger(deviceInstance, objectType, objectInstance, pr
         return true;
     }
 
-    console.log('Error: GetPropertySignedInteger failed');
+    logger.error('GetPropertySignedInteger failed');
     return false;
 }
 
 function GetPropertyTime(deviceInstance, objectType, objectInstance, propertyIdentifier, hour, minute, second, hundrethSeconds, useArrayIndex, propertyArrayIndex) {
-    console.log('GetPropertyTime - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex);
+    logger.debug('GetPropertyTime - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex);
 
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
@@ -646,12 +668,12 @@ function GetPropertyTime(deviceInstance, objectType, objectInstance, propertyIde
         }
     }
 
-    console.log('Error: GetPropertyTime failed');
+    logger.error('GetPropertyTime failed');
     return false;
 }
 
 function GetPropertyUnsignedInteger(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex) {
-    console.log('GetPropertyUnsignedInteger - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex);
+    logger.debug('GetPropertyUnsignedInteger - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex);
 
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
@@ -701,7 +723,7 @@ function GetPropertyUnsignedInteger(deviceInstance, objectType, objectInstance, 
     // Example of getting Multi-State Input object State Text property (return numberOfStates when State Text property is requested in GetPropertyUnsignedInt())
     else if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.STATETEXT && objectType === CASBACnetStack.OBJECT_TYPE.MULTI_STATE_INPUT) {
         if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
-            console.log('DEBUG: IMPORTANT: Check spec for GetPropertyUnsignedInteger - Multi-State Input object State Text property: 693');
+            logger.debug('DEBUG: IMPORTANT: Check spec for GetPropertyUnsignedInteger - Multi-State Input object State Text property: 693');
 
             value.writeUInt32LE(database[resultObjectType][objectInstance].numberofstates, 0);
             return true;
@@ -718,7 +740,7 @@ function GetPropertyUnsignedInteger(deviceInstance, objectType, objectInstance, 
         return true;
     }
 
-    console.log('Error: GetPropertyUnsignedInteger failed');
+    logger.error('GetPropertyUnsignedInteger failed');
     return false;
 }
 
@@ -727,7 +749,7 @@ function GetPropertyUnsignedInteger(deviceInstance, objectType, objectInstance, 
 // If the property could not be set then return false
 
 function SetPropertyBitString(deviceInstance, objectType, objectInstance, propertyIdentifier, value, length, useArrayIndex, propertyArrayIndex, priority, errorCode) {
-    console.log('SetPropertyBitString - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', value: ', value, ', length: ', length, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority', priority, ', errorCode: ', errorCode);
+    logger.debug('SetPropertyBitString - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', value: ', value, ', length: ', length, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority', priority, ', errorCode: ', errorCode);
 
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
@@ -743,26 +765,26 @@ function SetPropertyBitString(deviceInstance, objectType, objectInstance, proper
                 for (let i = 0; i < length; i++) {
                     let boolToWrite = value.readUInt8(i) === 1 ? true : false;
                     database[resultObjectType][objectInstance].present_value[i] = boolToWrite;
-                    console.log('DEBUG: value read from pointer: ', value.readUInt8(i), 'value of bool written: ', boolToWrite);
+                    logger.debug('DEBUG: value read from pointer: ', value.readUInt8(i), 'value of bool written: ', boolToWrite);
                 }
                 return true;
             }
         }
     }
 
-    console.log('Error: SetPropertyBitString failed');
+    logger.error('SetPropertyBitString failed');
     return false;
 }
 
 function SetPropertyBool(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex, priority, errorCode) {
-    console.log('SetPropertyBool - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', value: ', value, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ': errorCode, ', errorCode);
+    logger.debug('SetPropertyBool - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', value: ', value, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ': errorCode, ', errorCode);
 
-    console.log('Error: SetPropertyBool failed');
+    logger.error('SetPropertyBool failed');
     return false;
 }
 
-function SetPropertyCharString(deviceInstance, objectType, objectInstance, propertyIdentifier, value, length, encodingType, useArrayIndex, propertyArrayIndex, priority, errorCode) {
-    console.log('SetPropertyCharString - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', value: ', value, ', length: ', length, ', encodingType: ', encodingType, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ': errorCode, ', errorCode);
+function SetPropertyCharacterString(deviceInstance, objectType, objectInstance, propertyIdentifier, value, length, encodingType, useArrayIndex, propertyArrayIndex, priority, errorCode) {
+    logger.debug('SetPropertyCharString - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', value: ', value, ', length: ', length, ', encodingType: ', encodingType, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ': errorCode, ', errorCode);
 
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
@@ -791,13 +813,20 @@ function SetPropertyCharString(deviceInstance, objectType, objectInstance, prope
             return true;
         }
     }
+    
+    // Check if trying to set the object name of created Analog Value object
+    // Used in initializing objects
+    if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.OBJECT_NAME && objectType === CASBACnetStack.OBJECT_TYPE.ANALOG_VALUE && typeof database['created_analog_value'][objectInstance] !== 'undefined') {
+        database['created_analog_value']['object_name'] = CreateStringFromCharPointer(value, length);
+        return true;
+    }
 
-    console.log('Error: SetPropertyCharString failed');
+    logger.error('SetPropertyCharString failed');
     return false;
 }
 
 function SetPropertyDate(deviceInstance, objectType, objectInstance, propertyIdentifier, year, month, day, weekday, useArrayIndex, propertyArrayIndex, priority, errorCode) {
-    console.log('SetPropertyDate - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', year: ', year, ', month: ', month, ', day: ', day, ', weekday: ', weekday, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ': errorCode, ', errorCode);
+    logger.debug('SetPropertyDate - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', year: ', year, ', month: ', month, ', day: ', day, ', weekday: ', weekday, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ': errorCode, ', errorCode);
 
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
@@ -814,12 +843,12 @@ function SetPropertyDate(deviceInstance, objectType, objectInstance, propertyIde
         }
     }
 
-    console.log('Error: SetPropertyDate failed');
+    logger.error('SetPropertyDate failed');
     return false;
 }
 
 function SetPropertyDouble(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex, priority, errorCode) {
-    console.log('SetPropertyDouble - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', value: ', value, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ': errorCode, ', errorCode);
+    logger.debug('SetPropertyDouble - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', value: ', value, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ': errorCode, ', errorCode);
 
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
@@ -833,12 +862,12 @@ function SetPropertyDouble(deviceInstance, objectType, objectInstance, propertyI
         }
     }
 
-    console.log('Error: SetPropertyDouble failed');
+    logger.error('SetPropertyDouble failed');
     return false;
 }
 
 function SetPropertyEnumerated(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex, priority, errorCode) {
-    console.log('SetPropertyEnumerated - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', value: ', value, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ': errorCode, ', errorCode);
+    logger.debug('SetPropertyEnumerated - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', value: ', value, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ': errorCode, ', errorCode);
 
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
@@ -861,12 +890,12 @@ function SetPropertyEnumerated(deviceInstance, objectType, objectInstance, prope
         }
     }
 
-    console.log('Error: SetPropertyEnumerated failed');
+    logger.error('SetPropertyEnumerated failed');
     return false;
 }
 
 function SetPropertyNull(deviceInstance, objectType, objectInstance, propertyIdentifier, useArrayIndex, propertyArrayIndex, priority, errorCode) {
-    console.log('SetPropertyNull - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier, :', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ', errorCode: ', errorCode);
+    logger.debug('SetPropertyNull - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier, :', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ', errorCode: ', errorCode);
 
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
@@ -881,12 +910,12 @@ function SetPropertyNull(deviceInstance, objectType, objectInstance, propertyIde
         }
     }
 
-    console.log('Error: SetPropertyNull failed');
+    logger.error('SetPropertyNull failed');
     return false;
 }
 
 function SetPropertyOctetString(deviceInstance, objectType, objectInstance, propertyIdentifier, value, length, useArrayIndex, propertyArrayIndex, priority, errorCode) {
-    console.log('SetPropertyOctetString - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', value: ', value, ', length: ', length, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ', errorCode: ', errorCode);
+    logger.debug('SetPropertyOctetString - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', value: ', value, ', length: ', length, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ', errorCode: ', errorCode);
 
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
@@ -925,13 +954,12 @@ function SetPropertyOctetString(deviceInstance, objectType, objectInstance, prop
         }
     }
 
-    console.log('Error: SetPropertyOctetString failed');
+    logger.error('SetPropertyOctetString failed');
     return false;
 }
 
-// TODO: Real, SignedInt, Time, UnsignedInt
 function SetPropertyReal(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex, priority, errorCode) {
-    console.log('SetPropertyReal - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', value: ', value, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ', errorCode: ', errorCode);
+    logger.debug('SetPropertyReal - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', value: ', value, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ', errorCode: ', errorCode);
 
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
@@ -967,12 +995,18 @@ function SetPropertyReal(deviceInstance, objectType, objectInstance, propertyIde
         }
     }
 
-    console.log('Error: SetPropertyReal failed');
+    // Check if setting present value of a created Analog Value
+    else if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE && objectType === CASBACnetStack.OBJECT_TYPE.ANALOG_VALUE && typeof database['created_analog_value'][objectInstance] !== 'undefined') {
+        database['created_analog_value'].present_value = value;
+        return true;
+    }
+
+    logger.error('SetPropertyReal failed');
     return false;
 }
 
 function SetPropertySignedInteger(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex, priority, errorCode) {
-    console.log('SetPropertySignedInteger - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', value: ', value, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ', errorCode: ', errorCode);
+    logger.debug('SetPropertySignedInteger - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', value: ', value, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ', errorCode: ', errorCode);
 
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
@@ -999,12 +1033,12 @@ function SetPropertySignedInteger(deviceInstance, objectType, objectInstance, pr
         }
     }
 
-    console.log('Error: SetPropertySignedInteger failed');
+    logger.error('SetPropertySignedInteger failed');
     return false;
 }
 
 function SetPropertyTime(deviceInstance, objectType, objectInstance, propertyIdentifier, hour, minute, second, hundrethSeconds, useArrayIndex, propertyArrayIndex, priority, errorCode) {
-    console.log('SetPropertyTime - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', hour: ', hour, ', minute: ', minute, ', second: ', second, ', hundrethSeconds: ', hundrethSeconds, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ', errorCode: ', errorCode);
+    logger.debug('SetPropertyTime - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', hour: ', hour, ', minute: ', minute, ', second: ', second, ', hundrethSeconds: ', hundrethSeconds, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ', errorCode: ', errorCode);
 
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
@@ -1021,12 +1055,12 @@ function SetPropertyTime(deviceInstance, objectType, objectInstance, propertyIde
         }
     }
 
-    console.log('Error: SetPropertyTime failed');
+    logger.error('SetPropertyTime failed');
     return false;
 }
 
 function SetPropertyUnsignedInteger(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex, priority, errorCode) {
-    console.log('SetPropertyUnsignedInteger - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', value: ', value, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ', errorCode: ', errorCode);
+    logger.debug('SetPropertyUnsignedInteger - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', value: ', value, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ', errorCode: ', errorCode);
 
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
@@ -1061,11 +1095,155 @@ function SetPropertyUnsignedInteger(deviceInstance, objectType, objectInstance, 
         }
     }
 
-    console.log('Error: SetPropertyUnsignedInteger failed');
+    // Example of setting other properties
+    else if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && typeof database[resultObjectType][objectInstance][resultPropertyIdentifier] !== 'undefined') {
+        database[resultObjectType][objectInstance][resultPropertyIdentifier] = value;
+        return true;
+    }
+
+    logger.error('SetPropertyUnsignedInteger failed');
     return false;
 }
 
-function main() {
+// Other callbacks
+function CreateObject(deviceInstance, objectType, objectInstance) {
+    // This callback is called when this BACnet Server device receives a CreateObject message
+    // In this callback, you can allocate memory to store properties that you would store
+    // For example, present-value and object name
+
+    if (objectType === CASBACnetStack.OBJECT_TYPE.ANALOG_VALUE) {
+        database['created_analog_value'][objectInstance] = {};
+        database['created_analog_value'][objectInstance].object_name = 'AnalogValue_' + objectInstance.toString();
+        return true;
+    }
+    logger.error('CreateObject failed');
+    return false;
+}
+
+function DeleteObject(devinceInstance, objectType, objectInstance) {
+    // This callback is called when this BACnet Server device receives a DeleteObject message
+    // In this callbcak, you can clean up any memory that was allocated when the object was
+    // initially created.
+
+    // In this example, we will only allow Analog Values to be enabled
+    // See the SetupBACnetDeviceFunction on how this is handled
+    if (objectType === CASBACnetStack.OBJECT_TYPE.ANALOG_VALUE) {
+        delete database['created_analog_value'][objectInstance];
+        return true;
+    }
+    logger.error('DeleteObject failed');
+    return false;
+}
+
+function ReinitializeDevice(devinceInstance, reinitializedState, password, passwordLength, errorCode) {
+    // This callback is called when this BACnet Server device receives a ReinitializeDevice message
+    // In this callback, you will handle the reinitializedState.
+    // If reinitializedState = ACTIVATE_CHANGES (7) then you will apply any network port changes and store the values in non-volatile memory
+    // If reinitializedState = WARM_START(1) then you will apply any network port changes, store the values in non-volatile memory, and restart the device.
+
+    // Before handling the reinitializedState, first check the password.
+    // If your device does not require a password, then ignore any password passed in.
+    // Otherwise, validate the password.
+    //		If password invalid, missing, or incorrect: set errorCode to PasswordInvalid (26)
+    // In this example, a password of 12345 is required.
+    if (password == ref.NULL_POINTER || passwordLength === 0) {
+        errorCode.writeUInt32LE(CASBACnetStack.ERROR_CODES.PASSWORD_FAILURE, 0);
+        logger.error('Failed to ReinitializeDevice - No password (PASSWORD_FAILURE)');
+        return false;
+    }
+
+    if (CreateStringFromCharPointer(password, passwordLength) !== '12345') {
+        errorCode.writeUInt32LE(CASBACnetStack.ERROR_CODES.PASSWORD_FAILURE, 0);
+        logger.error('Failed to ReinitializeDevice - Bad password (PASSWORD_FAILURE)');
+        return false;
+    }
+
+    // In this example, only the NetworkPort Object FdBbmdAddress and FdSubscriptionLifetime properties are writable and need to be
+    // stored in non-volatile memory.  For the purpose of this example, we will not storing these values in non-volaitle memory.
+
+    // 1. Store values that must be stored in non-volatile memory (i.e. must survive a reboot).
+
+    // 2. Apply any Network Port values that have been written to.
+    // If any validation on the Network Port values failes, set errorCode to INVALID_CONFIGURATION_DATA (46)
+
+    // 3. Set Network Port ChangesPending property to false
+
+    // 4. Handle ReinitializedState. If ACTIVATE_CHANGES, no other action, return true.
+    //								 If WARM_START, prepare device for reboot, return true. and reboot.
+    // NOTE: Must return true first before rebooting so the stack sends the SimpleAck.
+    if (reinitializedState == CASBACnetStack.CONSTANTS.REINITIALIZED_STATE_ACTIVATE_CHANGES) {
+        database['network_port'][parseInt(Object.keys(database['network_port'])[0])].changespending = false;
+        return true;
+    } else if (reinitializedState == CASBACnetStack.CONSTANTS.REINITIALIZED_STATE_WARM_START) {
+        // Flag for reboot and handle reboot after stack responds with SimpleAck.
+        database['network_port'][parseInt(Object.keys(database['network_port'])[0])].changespending = false;
+        return true;
+    } else {
+        // All other states are not supported in this example.
+        errorCode.writeUInt32LE(CASBACnetStack.ERROR_CODES.OPTIONAL_FUNCTIONALITY_NOT_SUPPORTED, 0);
+        logger.error('Failed to ReinitializeDevice - Invalid state to reinitialize to (OPTIONAL_FUNCTIONALITY_NOT_SUPPORTED');
+        return false;
+    }
+}
+
+function DeviceCommunicationControl(deviceInstance, enableDisable, password, passwordLength, useTimeDuration, timeDuration, errorCode) {
+    // This callback is called when this BACnet Server device receives a DeviceCommunicationControl message
+    // In this callback, you will handle the password. All other parameters are purely for logging to know
+    // what parameters the DeviceCommunicationControl request had.
+
+    // To handle the password:
+    // If your device does not require a password, then ignore any password passed in.
+    // Otherwise, validate the password.
+    //		If password invalid, missing, or incorrect: set errorCode to PasswordInvalid (26)
+    // In this example, a password of 12345 is required.
+    if (password == ref.NULL_POINTER || passwordLength === 0) {
+        errorCode.writeUInt32LE(CASBACnetStack.ERROR_CODES.PASSWORD_FAILURE, 0);
+        logger.error('Failed to ReinitializeDevice - No password (PASSWORD_FAILURE)');
+        return false;
+    }
+
+    if (CreateStringFromCharPointer(password, passwordLength) !== '12345') {
+        errorCode.writeUInt32LE(CASBACnetStack.ERROR_CODES.PASSWORD_FAILURE, 0);
+        logger.error('Failed to ReinitializeDevice - Bad password (PASSWORD_FAILURE)');
+        return false;
+    }
+
+    // Must return true to allow for the DeviceCommunicationControl logic to continue
+    return true;
+}
+
+function HookTextMessage(sourceDeviceIdentifier, useMessageClass, messageClassUnsigned, messageClassString, messageClassStringLength, messagePriority, message, messageLength, connectionString, connectionStringLength, networkType, sourceNetwork, sourceAddress, sourceAddressLength, errorClass, errorCode) {
+    // Configured to respond to Client example Confirmed Text Message Requests
+    const expectedSourceDeviceIdentifier = 389002;
+    const expectedMessageClass = 5;
+    const expectedMessagePriority = 0; // normal
+
+    // Check that this device is configured to do some logic using the text message
+    if (sourceDeviceIdentifier == expectedSourceDeviceIdentifier && messageClassUnsigned == expectedMessageClass && messagePriority == expectedMessagePriority) {
+        // Perform some logic using the message
+        console.log('Received text message request meant for us to perform some logic: ', CreateStringFromCharPointer(message, messageLength));
+
+        // Device is configured to handle the confirmed text message, response is Result(+) or simpleAck
+        return true;
+    }
+
+    // This device is not configured to handle the text message, response is Result(-)
+    // Ignored for Unconfirmed Text Message Requests
+
+    // Create an error
+    errorClass.writeUInt16LE(0, 0); // 0: Device Error Class
+    errorCode.writeUInt16LE(132, 0); // 132: Not Configured Error Code
+    logger.error('HookTextMessage failed: This device is not configured to handle the text message');
+    return false;
+}
+
+function LogDebugMessage(message, messageLength, messageType) {
+    // This callback is called when the CAS BACnet Stack logs an error or info message
+    // In this callback, you will be able to access this debug message.
+    console.log('Log message type: ', messageType ? 'Info' : 'Error');
+}
+
+async function main() {
     // Print version information
     // ------------------------------------------------------------------------
     console.log('BACnet Server Example NodeJS');
@@ -1078,20 +1256,52 @@ function main() {
     // Setup the callback functions
     // ------------------------------------------------------------------------
     console.log('FYI: Setting up callback functions...');
+
+    // Message Callback Functions
     CASBACnetStack.stack.BACnetStack_RegisterCallbackSendMessage(FuncPtrCallbackSendMessage);
     CASBACnetStack.stack.BACnetStack_RegisterCallbackReceiveMessage(FuncPtrCallbackReceiveMessage);
+
+    // System Time Callback Functions
     CASBACnetStack.stack.BACnetStack_RegisterCallbackGetSystemTime(FuncPtrCallbackGetSystemTime);
 
-    CASBACnetStack.stack.BACnetStack_RegisterCallbackGetPropertyCharacterString(FuncPtrCallbackGetPropertyCharacterString);
-    CASBACnetStack.stack.BACnetStack_RegisterCallbackGetPropertyReal(FuncPtrCallbackGetPropertyReal);
+    // Get Property Callback Functions
+    CASBACnetStack.stack.BACnetStack_RegisterCallbackGetPropertyBitString(FuncPtrCallbackGetPropertyBitString);
     CASBACnetStack.stack.BACnetStack_RegisterCallbackGetPropertyBool(FuncPtrCallbackGetPropertyBool);
-    CASBACnetStack.stack.BACnetStack_RegisterCallbackGetPropertyEnumerated(FuncPtrCallbackGetPropertyEnumerated);
+    CASBACnetStack.stack.BACnetStack_RegisterCallbackGetPropertyCharacterString(FuncPtrCallbackGetPropertyCharacterString);
     CASBACnetStack.stack.BACnetStack_RegisterCallbackGetPropertyDate(FuncPtrCallbackGetPropertyDate);
     CASBACnetStack.stack.BACnetStack_RegisterCallbackGetPropertyDouble(FuncPtrCallbackGetPropertyDouble);
+    CASBACnetStack.stack.BACnetStack_RegisterCallbackGetPropertyEnumerated(FuncPtrCallbackGetPropertyEnumerated);
     CASBACnetStack.stack.BACnetStack_RegisterCallbackGetPropertyOctetString(FuncPtrCallbackGetPropertyOctetString);
+    CASBACnetStack.stack.BACnetStack_RegisterCallbackGetPropertyReal(FuncPtrCallbackGetPropertyReal);
     CASBACnetStack.stack.BACnetStack_RegisterCallbackGetPropertySignedInteger(FuncPtrCallbackGetPropertySignedInteger);
     CASBACnetStack.stack.BACnetStack_RegisterCallbackGetPropertyTime(FuncPtrCallbackGetPropertyTime);
     CASBACnetStack.stack.BACnetStack_RegisterCallbackGetPropertyUnsignedInteger(FuncPtrCallbackGetPropertyUnsignedInteger);
+
+    // Set Property Callback Functions
+    CASBACnetStack.stack.BACnetStack_RegisterCallbackSetPropertyBitString(FuncPtrCallbackSetPropertyBitString);
+    CASBACnetStack.stack.BACnetStack_RegisterCallbackSetPropertyBool(FuncPtrCallbackSetPropertyBool);
+    CASBACnetStack.stack.BACnetStack_RegisterCallbackSetPropertyCharacterString(FuncPtrCallbackSetPropertyCharacterString);
+    CASBACnetStack.stack.BACnetStack_RegisterCallbackSetPropertyDate(FuncPtrCallbackSetPropertyDate);
+    CASBACnetStack.stack.BACnetStack_RegisterCallbackSetPropertyDouble(FuncPtrCallbackSetPropertyDouble);
+    CASBACnetStack.stack.BACnetStack_RegisterCallbackSetPropertyEnumerated(FuncPtrCallbackSetPropertyEnumerated);
+    CASBACnetStack.stack.BACnetStack_RegisterCallbackSetPropertyNull(FuncPtrCallbackSetPropertyNull);
+    CASBACnetStack.stack.BACnetStack_RegisterCallbackSetPropertyOctetString(FuncPtrCallbackSetPropertyOctetString);
+    CASBACnetStack.stack.BACnetStack_RegisterCallbackSetPropertyReal(FuncPtrCallbackSetPropertyReal);
+    CASBACnetStack.stack.BACnetStack_RegisterCallbackSetPropertySignedInteger(FuncPtrCallbackSetPropertySignedInteger);
+    CASBACnetStack.stack.BACnetStack_RegisterCallbackSetPropertyTime(FuncPtrCallbackSetPropertyTime);
+    CASBACnetStack.stack.BACnetStack_RegisterCallbackSetPropertyUnsignedInteger(FuncPtrCallbackSetPropertyUnsignedInteger);
+
+    // Object Creation Callback Functions
+    CASBACnetStack.stack.BACnetStack_RegisterCallbackCreateObject(FuncPtrCallbackCreateObject);
+    CASBACnetStack.stack.BACnetStack_RegisterCallbackDeleteObject(FuncPtrCallbackDeleteObject);
+
+    // Remote Device Management Callback Functions
+    CASBACnetStack.stack.BACnetStack_RegisterCallbackReinitializeDevice(FuncPtrCallbackReinitializeDevice);
+    CASBACnetStack.stack.BACnetStack_RegisterCallbackDeviceCommunicationControl(FuncPtrCallbackDeviceCommunicationControl);
+    CASBACnetStack.stack.BACnetStack_RegisterHookTextMessage(FuncPtrHookTextMessage);
+
+    // Debug Callback Function
+    CASBACnetStack.stack.BACnetStack_RegisterCallbackLogDebugMessage(FuncPtrCallbackLogDebugMessage);
 
     // Setup the BACnet device.
     // ------------------------------------------------------------------------
@@ -1100,38 +1310,131 @@ function main() {
     console.log('FYI: BACnet device instance:', DEVICE_INSTANCE);
     CASBACnetStack.stack.BACnetStack_AddDevice(DEVICE_INSTANCE);
 
-    // Loop thought the database adding the objects as they are found.
+    // Setup the BACnet objects.
+    // ------------------------------------------------------------------------
+    // Loop through the database adding the objects as they are found.
     for (var objectTypeKey in database) {
         // Decode the string repseration of the object type as a enumeration.
         if (!objectTypeKey.toUpperCase() in CASBACnetStack.OBJECT_TYPE) {
-            console.log('Error: Unknown object type found. object type:', objectTypeKey);
+            logger.error('Unknown object type found. object type:', objectTypeKey);
             continue;
         }
+        // Exclude Trend Log, Trend Log Multiple, and Network Port as they use special AddObject functions
+        else if (objectTypeKey === 'network_port' || objectTypeKey === 'trend_log' || objectTypeKey === 'trend_log_multiple') {
+            continue;
+        }
+
         var objectTypeEnum = CASBACnetStack.OBJECT_TYPE[objectTypeKey.toUpperCase()];
         if (objectTypeEnum === CASBACnetStack.OBJECT_TYPE.device) {
             continue; // The device has already been added.
         }
 
-        // Loop thought the ObjectInstance for this object type.
+        // Loop through the ObjectInstance for this object type.
         for (var objectInstance in database[objectTypeKey]) {
             console.log('FYI: Adding object. objectType:', objectTypeKey, '(' + objectTypeEnum + '), objectInstance:', objectInstance);
             CASBACnetStack.stack.BACnetStack_AddObject(DEVICE_INSTANCE, objectTypeEnum, objectInstance);
         }
     }
-
     // Note: A object can be manually added as well
     // CASBACnetStack.stack.BACnetStack_AddObject(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.ANALOG_INPUT, 0)
 
     // Set up the BACnet services
+    // ------------------------------------------------------------------------
     // By default only the required servics are enabled.
-    CASBACnetStack.stack.BACnetStack_SetServiceEnabled(DEVICE_INSTANCE, CASBACnetStack.SERVICES_SUPPORTED.READ_PROPERTY_MULTIPLE, true);
+    console.log('Enabling IAm... ');
+    CASBACnetStack.stack.BACnetStack_SetServiceEnabled(DEVICE_INSTANCE, CASBACnetStack.SERVICES_SUPPORTED.I_AM, true);
+
+    console.log('Enabling ReadPropertyMultiple... ');
+    if (!CASBACnetStack.stack.BACnetStack_SetServiceEnabled(DEVICE_INSTANCE, CASBACnetStack.SERVICES_SUPPORTED.READ_PROPERTY_MULTIPLE, true)) {
+        logger.error('Failed to enable the ReadPropertyMultiple service');
+        return false;
+    }
+    console.log('OK');
+    console.log('Enabling WriteProperty... ');
+    if (!CASBACnetStack.stack.BACnetStack_SetServiceEnabled(DEVICE_INSTANCE, CASBACnetStack.SERVICES_SUPPORTED.WRITE_PROPERTY, true)) {
+        logger.error('Failed to enable the WriteProperty service');
+        return false;
+    }
+    console.log('OK');
+    console.log('Enabling WritePropertyMultiple... ');
+    if (!CASBACnetStack.stack.BACnetStack_SetServiceEnabled(DEVICE_INSTANCE, CASBACnetStack.SERVICES_SUPPORTED.WRITE_PROPERTY_MULTIPLE, true)) {
+        logger.error('Failed to enable the WritePropertyMultiple service');
+        return false;
+    }
+    console.log('OK');
+    console.log('Enabling TimeSynchronization... ');
+    if (!CASBACnetStack.stack.BACnetStack_SetServiceEnabled(DEVICE_INSTANCE, CASBACnetStack.SERVICES_SUPPORTED.TIME_SYNCHRONIZATION, true)) {
+        logger.error('Failed to enable the TimeSynchronization service');
+        return false;
+    }
+    console.log('OK');
+    console.log('Enabling UTCTimeSynchronization... ');
+    if (!CASBACnetStack.stack.BACnetStack_SetServiceEnabled(DEVICE_INSTANCE, CASBACnetStack.SERVICES_SUPPORTED.UTC_TIME_SYNCHRONIZATION, true)) {
+        logger.error('Failed to enable the UTCTimeSynchronization service');
+        return false;
+    }
+    console.log('OK');
+    console.log('Enabling SubscibeCOV... ');
+    if (!CASBACnetStack.stack.BACnetStack_SetServiceEnabled(DEVICE_INSTANCE, CASBACnetStack.SERVICES_SUPPORTED.SUBSCRIBE_COV, true)) {
+        logger.error('Failed to enable the SubscibeCOV service');
+        return false;
+    }
+    console.log('OK');
+    console.log('Enabling SubscibeCOVPropety... ');
+    if (!CASBACnetStack.stack.BACnetStack_SetServiceEnabled(DEVICE_INSTANCE, CASBACnetStack.SERVICES_SUPPORTED.SUBSCRIBE_COV_PROPERTY, true)) {
+        logger.error('Failed to enable the SubscibeCOVPropety service');
+        return false;
+    }
+    console.log('OK');
+    console.log('Enabling CreateObject... ');
+    if (!CASBACnetStack.stack.BACnetStack_SetServiceEnabled(DEVICE_INSTANCE, CASBACnetStack.SERVICES_SUPPORTED.CREATE_OBJECT, true)) {
+        logger.error('Failed to enable the CreateObject service');
+        return false;
+    }
+    console.log('OK');
+    console.log('Enabling DeleteObject... ');
+    if (!CASBACnetStack.stack.BACnetStack_SetServiceEnabled(DEVICE_INSTANCE, CASBACnetStack.SERVICES_SUPPORTED.DELETE_OBJECT, true)) {
+        logger.error('Failed to enable the DeleteObject service');
+        return false;
+    }
+    console.log('OK');
+    console.log('Enabling ReadRange... ');
+    if (!CASBACnetStack.stack.BACnetStack_SetServiceEnabled(DEVICE_INSTANCE, CASBACnetStack.SERVICES_SUPPORTED.READ_RANGE, true)) {
+        logger.error('Failed to enable the ReadRange service');
+        return false;
+    }
+    console.log('OK');
+    console.log('Enabling ReinitializeDevice... ');
+    if (!CASBACnetStack.stack.BACnetStack_SetServiceEnabled(DEVICE_INSTANCE, CASBACnetStack.SERVICES_SUPPORTED.REINITIALIZE_DEVICE, true)) {
+        logger.error('Failed to enable the ReinitializeDevice service');
+        return false;
+    }
+    console.log('OK');
+    console.log('Enabling DeviceCommunicationControl... ');
+    if (!CASBACnetStack.stack.BACnetStack_SetServiceEnabled(DEVICE_INSTANCE, CASBACnetStack.SERVICES_SUPPORTED.DEVICE_COMMUNICATION_CONTROL, true)) {
+        logger.error('Failed to enable the DeviceCommunicationControl service');
+        return false;
+    }
+    console.log('OK');
+    console.log('Enabling UnconfirmedTextMessage... ');
+    if (!CASBACnetStack.stack.BACnetStack_SetServiceEnabled(DEVICE_INSTANCE, CASBACnetStack.SERVICES_SUPPORTED.UNCONFIRMED_TEXT_MESSAGE, true)) {
+        logger.error('Failed to enable the UnconfirmedTextMessage service');
+        return false;
+    }
+    console.log('OK');
+    console.log('Enabling ConfirmedTextMessage... ');
+    if (!CASBACnetStack.stack.BACnetStack_SetServiceEnabled(DEVICE_INSTANCE, CASBACnetStack.SERVICES_SUPPORTED.CONFIRMED_TEXT_MESSAGE, true)) {
+        logger.error('Failed to enable the ConfirmedTextMessage service');
+        return false;
+    }
+    console.log('OK');
 
     // Setup the UDP socket
     // ------------------------------------------------------------------------
     console.log('FYI: Setting up BACnet UDP port. Port:', SETTING_BACNET_PORT);
 
     server.on('error', (err) => {
-        console.error(`Error: UDP.Server error:\n${err.stack}`);
+        logger.error(`UDP.Server error:\n${err.stack}`);
         server.close();
     });
 
@@ -1153,6 +1456,258 @@ function main() {
     });
 
     server.bind(SETTING_BACNET_PORT);
+
+    // Get Local IP
+    var localAddress = [];
+    var defaultGateway = [];
+    var subnetMask = [];
+    // Only one network adapter:
+    // const localNetwork = await new Promise((resolve) => {
+    //     network.get_active_interface((result, err) => {
+    //         if (err) {
+    //             logger.error('failed to get network interface information - ', err);
+    //             rejects(err);
+    //         } else {
+    //             resolve(result);
+    //         }
+    //     });
+    // });
+    // localAddress = localNetwork.ip_address.split('.').map(Number);
+    // defaultGateway = localNetwork.gateway_ip.split('.').map(Number);
+    // subnetMask = localNetwork.netmask.split('.').map(Number);
+
+    // Multiple network adapters:
+    const localNetworks = await new Promise((resolve, reject) => {
+        network.get_interfaces_list((result, err) => {
+            if (err) {
+                logger.error('failed to get network interface information - ', err);
+                reject(err);
+            } else {
+                resolve(result);
+            }
+        });
+    });
+    for (localNetwork in localNetworks) {
+        // Specify your network here with your own filters
+        let addressIterator = localNetwork.ip_address.split('.');
+        if (addressIterator[0] === 192) {
+            localAddress = localNetwork.ip_address.split('.').map(Number);
+            defaultGateway = localNetwork.gateway_ip.split('.').map(Number);
+            subnetMask = localNetwork.netmask.split('.').map(Number);
+        }
+    }
+    logger.debug('See local IPs: ', results);
+
+    // Write Network Parameters to database
+    database['network_port'][parseInt(Object.keys(database['network_port'])[0])].bacnetipudpport = SETTING_BACNET_PORT;
+    database['network_port'][parseInt(Object.keys(database['network_port'])[0])].fdbbmdaddress_port = SETTING_BACNET_PORT;
+    database['network_port'][parseInt(Object.keys(database['network_port'])[0])].ipaddress = localAddress.slice();
+    database['network_port'][parseInt(Object.keys(database['network_port'])[0])].ipaddress[4] = SETTING_BACNET_PORT / 256;
+    database['network_port'][parseInt(Object.keys(database['network_port'])[0])].ipaddress[5] = SETTING_BACNET_PORT % 256;
+    database['network_port'][parseInt(Object.keys(database['network_port'])[0])].fdbbmdaddress_host_ip = localAddress.slice();
+    database['network_port'][parseInt(Object.keys(database['network_port'])[0])].fdbbmdaddress_host_ip[4] = SETTING_BACNET_PORT / 256;
+    database['network_port'][parseInt(Object.keys(database['network_port'])[0])].fdbbmdaddress_host_ip[5] = SETTING_BACNET_PORT % 256;
+    database['network_port'][parseInt(Object.keys(database['network_port'])[0])].ipdefaultgateway = defaultGateway.slice();
+    database['network_port'][parseInt(Object.keys(database['network_port'])[0])].ipsubnetmask = subnetMask.slice();
+    database['network_port'][parseInt(Object.keys(database['network_port'])[0])].broadcast_ip_address = localAddress.slice();
+    database['network_port'][parseInt(Object.keys(database['network_port'])[0])].broadcast_ip_address[3] = 255;
+
+    // Setup your own DNS Servers if needed
+    // database['network_port'][parseInt(Object.keys(database['network_port'])[0])].ipdnsserver[0] = firstDNSServer.slice();
+    // database['network_port'][parseInt(Object.keys(database['network_port'])[0])].ipdnsserver[1] = secondDNSServer.slice();
+    // etc.
+
+    // Setup the Device Properties
+    // ------------------------------------------------------------------------
+    // Enable optional Device properties
+    if (!CASBACnetStack.stack.BACnetStack_SetPropertyEnabled(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.DEVICE, DEVICE_INSTANCE, CASBACnetStack.PROPERTY_IDENTIFIER.DESCRIPTION, true)) {
+        logger.error('Failed to enable the description property for Device');
+        return false;
+    }
+
+    // Update writable Device properties
+    // UTC Offset
+    if (!CASBACnetStack.stack.BACnetStack_SetPropertyWritable(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.DEVICE, DEVICE_INSTANCE, CASBACnetStack.PROPERTY_IDENTIFIER.UTC_OFFSET, true)) {
+        logger.error('Failed to make the UTC Offset property writable for Device');
+        return false;
+    }
+    // Description
+    if (!CASBACnetStack.stack.BACnetStack_SetPropertyWritable(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.DEVICE, DEVICE_INSTANCE, CASBACnetStack.PROPERTY_IDENTIFIER.DESCRIPTION, true)) {
+        logger.error('Failed to make the Description property writable for Device');
+        return false;
+    }
+    // Object Name
+    if (!CASBACnetStack.stack.BACnetStack_SetPropertyWritable(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.DEVICE, DEVICE_INSTANCE, CASBACnetStack.PROPERTY_IDENTIFIER.OBJECT_NAME, true)) {
+        logger.error('Failed to make the Object Name property writable for Device');
+        return false;
+    }
+
+    // Setup the Object Properties
+    // ------------------------------------------------------------------------
+    // Analog Input (AI) properties
+    console.log('TODO: Update callbacks for proprietary properties'); // Reminder
+    // Enable Proprietary Properties
+    logger.debug('DEBUG: Check parse of objectInstance: ', parseInt(Object.keys(database['analog_input'])[0]));
+    CASBACnetStack.stack.BACnetStack_SetProprietaryProperty(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.ANALOG_INPUT, parseInt(Object.keys(database['analog_input'])[0]), 512 + 1, false, false, CASBACnetStack.DATA_TYPES.CHARACTER_STRING, false, false, false);
+    CASBACnetStack.stack.BACnetStack_SetProprietaryProperty(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.ANALOG_INPUT, parseInt(Object.keys(database['analog_input'])[0]), 512 + 2, true, false, CASBACnetStack.DATA_TYPES.CHARACTER_STRING, false, false, false);
+    CASBACnetStack.stack.BACnetStack_SetProprietaryProperty(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.ANALOG_INPUT, parseInt(Object.keys(database['analog_input'])[0]), 512 + 3, true, true, CASBACnetStack.DATA_TYPES.CHARACTER_STRING, false, false, false);
+    CASBACnetStack.stack.BACnetStack_SetProprietaryProperty(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.ANALOG_INPUT, parseInt(Object.keys(database['analog_input'])[0]), 512 + 4, false, false, CASBACnetStack.DATA_TYPES.DATETIME, false, false, false);
+    // Set Present Value to subscribable
+    CASBACnetStack.stack.BACnetStack_SetPropertySubscribable(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.ANALOG_INPUT, parseInt(Object.keys(database['analog_input'])[0]), CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE, true);
+    CASBACnetStack.stack.BACnetStack_SetPropertyWritable(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.ANALOG_INPUT, parseInt(Object.keys(database['analog_input'])[0]), CASBACnetStack.PROPERTY_IDENTIFIER.COVINCREMENT, true);
+    // Enable the Description and Reliability property
+    CASBACnetStack.stack.BACnetStack_SetPropertyByObjectTypeEnabled(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.ANALOG_INPUT, CASBACnetStack.PROPERTY_IDENTIFIER.DESCRIPTION, true);
+    CASBACnetStack.stack.BACnetStack_SetPropertyByObjectTypeEnabled(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.ANALOG_INPUT, CASBACnetStack.PROPERTY_IDENTIFIER.RELIABILITY, true);
+    // Enable a specific property to be subscribable for COVProperty
+    CASBACnetStack.stack.BACnetStack_SetPropertySubscribable(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.ANALOG_INPUT, parseInt(Object.keys(database['analog_input'])[0]), CASBACnetStack.PROPERTY_IDENTIFIER.RELIABILITY, true);
+
+    // Analog Output (AO) properties
+    CASBACnetStack.stack.BACnetStack_SetPropertyByObjectTypeEnabled(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.ANALOG_OUTPUT, CASBACnetStack.PROPERTY_IDENTIFIER.MINPRESVALUE, true);
+    CASBACnetStack.stack.BACnetStack_SetPropertyByObjectTypeEnabled(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.ANALOG_OUTPUT, CASBACnetStack.PROPERTY_IDENTIFIER.MAXPRESVALUE, true);
+
+    // Analog Value (AV) properties
+    CASBACnetStack.stack.BACnetStack_SetPropertyWritable(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.ANALOG_VALUE, parseInt(Object.keys(database['analog_value'])[0]), CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE, true);
+    CASBACnetStack.stack.BACnetStack_SetPropertySubscribable(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.ANALOG_VALUE, parseInt(Object.keys(database['analog_value'])[0]), CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE, true);
+
+    // Binary Input (BI) properties
+    // No special config
+
+    // Binary Output (BO) properties
+    // No special config
+
+    // Binary Value (BV) properties
+    CASBACnetStack.stack.BACnetStack_SetPropertyWritable(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.BINARY_VALUE, parseInt(Object.keys(database['binary_value'])[0]), CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE, true);
+
+    // Multi State Input (MSI) properties
+    CASBACnetStack.stack.BACnetStack_SetPropertyByObjectTypeEnabled(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.MULTI_STATE_INPUT, CASBACnetStack.PROPERTY_IDENTIFIER.STATETEXT, true);
+
+    // Multi State Output (MSO) properties
+    // No special config
+
+    // Multi State Value (MSV) properties
+    CASBACnetStack.stack.BACnetStack_SetPropertyWritable(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.MULTI_STATE_VALUE, parseInt(Object.keys(database['multi_state_value'])[0]), CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE, true);
+
+    // Bit String Value (BSV) properties
+    CASBACnetStack.stack.BACnetStack_SetPropertyEnabled(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.BITSTRING_VALUE, parseInt(Object.keys(database['bitstring_value'])[0]), CASBACnetStack.PROPERTY_IDENTIFIER.BITTEXT, true);
+    CASBACnetStack.stack.BACnetStack_SetPropertyWritable(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.BITSTRING_VALUE, parseInt(Object.keys(database['bitstring_value'])[0]), CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE, true);
+
+    // Character String Value (CSV) properties
+    CASBACnetStack.stack.BACnetStack_SetPropertyWritable(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.CHARACTERSTRING_VALUE, parseInt(Object.keys(database['characterstring_value'])[0]), CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE, true);
+
+    // Date value (DV) properties
+    CASBACnetStack.stack.BACnetStack_SetPropertyWritable(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.DATE_VALUE, parseInt(Object.keys(database['date_value'])[0]), CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE, true);
+
+    // Integer Value (IV) properties
+    CASBACnetStack.stack.BACnetStack_SetPropertyWritable(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.INTEGER_VALUE, parseInt(Object.keys(database['integer_value'])[0]), CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE, true);
+
+    // Large Analog Value (LAV) properties
+    CASBACnetStack.stack.BACnetStack_SetPropertyWritable(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.LARGE_ANALOG_VALUE, parseInt(Object.keys(database['large_analog_value'])[0]), CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE, true);
+
+    // Octet String Value (OSV) properties
+    CASBACnetStack.stack.BACnetStack_SetPropertyWritable(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.OCTETSTRING_VALUE, parseInt(Object.keys(database['octetstring_value'])[0]), CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE, true);
+
+    // Positive Integer Value (PIV) properties
+    CASBACnetStack.stack.BACnetStack_SetPropertyWritable(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.POSITIVE_INTEGER_VALUE, parseInt(Object.keys(database['positive_integer_value'])[0]), CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE, true);
+
+    // Time Value (TV) properties
+    CASBACnetStack.stack.BACnetStack_SetPropertyWritable(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.TIME_VALUE, parseInt(Object.keys(database['time_value'])[0]), CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE, true);
+
+    // Trend Log (TL) properties
+    // Add object
+    logger.debug('REMINDER: Manual add Trend Log object');
+    if (!CASBACnetStack.stack.BACnetStack_AddTrendLogObject(DEVICE_INSTANCE, parseInt(Object.keys(database['trend_log'])[0]), CASBACnetStack.OBJECT_TYPE.ANALOG_INPUT, parseInt(Object.keys(database['analog_input'])[0]), CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE, CASBACnetStack.CONSTANTS.MAX_TREND_LOG_MAX_BUFFER_SIZE, false, 0)) {
+        logger.error('Failed to add TrendLog');
+        return false;
+    }
+    // Setup
+    if (!CASBACnetStack.stack.BACnetStack_SetTrendLogTypeToPolled(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.TREND_LOG, parseInt(Object.keys(database['trend_log'])[0]), true, false, 3000)) {
+        logger.error('Failed to setup TrendLog to poll every 30 seconds');
+        return false;
+    }
+
+    // Trend Log Multiple (TLM) properties
+    // Add object
+    if (!CASBACnetStack.stack.BACnetStack_AddTrendLogMultipleObject(DEVICE_INSTANCE, parseInt(Object.keys(database['trend_log_multiple'])[0]), CASBACnetStack.CONSTANTS.MAX_TREND_LOG_MAX_BUFFER_SIZE)) {
+        logger.error('Failed to add TrendLogMultiple');
+        return false;
+    }
+    // Setup
+    if (!CASBACnetStack.stack.BACnetStack_AddLoggedObjectToTrendLogMultiple(DEVICE_INSTANCE, parseInt(Object.keys(database['trend_log_multiple'])[0]), CASBACnetStack.OBJECT_TYPE.ANALOG_INPUT, parseInt(Object.keys(database['analog_input'])[0]), CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE, false, 0, false, 0)) {
+        logger.error('Failed to add BinaryInput to be logged by TrendLogMultiple');
+        return false;
+    }
+    if (!CASBACnetStack.stack.BACnetStack_AddLoggedObjectToTrendLogMultiple(DEVICE_INSTANCE, parseInt(Object.keys(database['trend_log_multiple'])[0]), CASBACnetStack.OBJECT_TYPE.ANALOG_INPUT, parseInt(Object.keys(database['analog_input'])[0]), CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE, false, 0, false, 0)) {
+        logger.error('Failed to add AnalogInput to be logged by TrendLogMultiple');
+        return false;
+    }
+    if (!CASBACnetStack.stack.BACnetStack_SetTrendLogTypeToPolled(DEVICE_INSTANCE, CASBACnetStack.PROPERTY_IDENTIFIER.TREND_LOG_MULTIPLE, parseInt(Object.keys(database['trend_log_multiple'])[0]), true, false, 3000)) {
+        logger.error('Failed to add TrendLogMultiple to poll every 30 seconds');
+        return false;
+    }
+
+    // Network Port (NP) properties
+    if (!CASBACnetStack.stack.BACnetStack_AddNetworkPortObject(DEVICE_INSTANCE, parseInt(Object.keys(database['network_port'])[0], CASBACnetStack.CONSTANTS.NETWORK_TYPE_IPV4, CASBACnetStack.CONSTANTS.PROTOCOL_LEVEL_BACNET_APPLICATION, CASBACnetStack.CONSTANTS.NETWORK_PORT_LOWEST_PROTOCOL_LAYER))) {
+        logger.error('Failed to add NetworkPort');
+        return false;
+    }
+    CASBACnetStack.stack.BACnetStack_SetPropertyEnabled(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.NETWORK_PORT, parseInt(Object.keys(database['network_port'])[0]), CASBACnetStack.PROPERTY_IDENTIFIER.BBMDACCEPTFDREGISTRATIONS, true);
+    CASBACnetStack.stack.BACnetStack_SetPropertyEnabled(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.NETWORK_PORT, parseInt(Object.keys(database['network_port'])[0]), CASBACnetStack.PROPERTY_IDENTIFIER.BBMDBROADCASTDISTRIBUTIONTABLE, true);
+    CASBACnetStack.stack.BACnetStack_SetPropertyEnabled(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.NETWORK_PORT, parseInt(Object.keys(database['network_port'])[0]), CASBACnetStack.PROPERTY_IDENTIFIER.BBMDFOREIGNDEVICETABLE, true);
+
+    var bdtHostAddr = Buffer.allocUnsafe(6);
+    bdtHostAddr.writeUint8(localAddress[0], 0); // IP
+    bdtHostAddr.writeUint8(localAddress[1], 1); // IP
+    bdtHostAddr.writeUint8(localAddress[2], 2); // IP
+    bdtHostAddr.writeUint8(localAddress[3], 3); // IP
+    bdtHostAddr.writeUint8(SETTING_BACNET_PORT / 255, 4); // Port
+    bdtHostAddr.writeUint8(SETTING_BACNET_PORT % 255, 5); // Port
+    var bdtSubnetMask = Buffer.allocUnsafe(6);
+    bdtSubnetMask.writeUint8(subnetMask[0], 0); // IP
+    bdtSubnetMask.writeUint8(subnetMask[1], 1); // IP
+    bdtSubnetMask.writeUint8(subnetMask[2], 2); // IP
+    bdtSubnetMask.writeUint8(subnetMask[3], 3); // IP
+    bdtSubnetMask.writeUint8(SETTING_BACNET_PORT / 255, 4); // Port
+    bdtSubnetMask.writeUint8(SETTING_BACNET_PORT % 255, 5); // Port
+    CASBACnetStack.stack.BACnetStack_AddBDTEntry(bdtHostAddr, 6, subnetMask, 4); // First BDT Entry must be server device
+
+    // Date Time Value (DTV) properties
+    // No special config
+
+    // Make some objects creatable (optional)
+    // ------------------------------------------------------------------------
+    if (!CASBACnetStack.stack.BACnetStack_SetObjectTypeSupported(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.ANALOG_VALUE, true)) {
+        logger.error('Failed to make Analog Values as supported object types in Device');
+        return false;
+    }
+    if (!CASBACnetStack.stack.BACnetStack_SetObjectTypeCreatable(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.ANALOG_VALUE, true)) {
+        logger.error('Failed to make Analog Values as supported object types in Device');
+        return false;
+    }
+
+    // Send I-Am of this device
+    // ------------------------------------------------------------------------
+    console.log('FYI: Sending I-AM broadcast');
+    var iAmConnectionString = Buffer.allocUnsafe(6);
+    bdtSubnetMask.writeUint8(database['network_port'][parseInt(Object.keys(database['network_port'])[0])].broadcast_ip_address[0], 0); // IP
+    bdtSubnetMask.writeUint8(database['network_port'][parseInt(Object.keys(database['network_port'])[0])].broadcast_ip_address[1], 1); // IP
+    bdtSubnetMask.writeUint8(database['network_port'][parseInt(Object.keys(database['network_port'])[0])].broadcast_ip_address[2], 2); // IP
+    bdtSubnetMask.writeUint8(database['network_port'][parseInt(Object.keys(database['network_port'])[0])].broadcast_ip_address[3], 3); // IP
+    bdtSubnetMask.writeUint8(SETTING_BACNET_PORT / 255, 4); // Port
+    bdtSubnetMask.writeUint8(SETTING_BACNET_PORT % 255, 5); // Port
+    if (!CASBACnetStack.stack.BACnetStack_SendIAm(DEVICE_INSTANCE, iAmConnectionString, 6, CASBACnetStack.CONSTANTS.NETWORK_TYPE_BACNET_IP, true, 65535, NULL, 0)) {
+        logger.error('Unable to send the IAm broadcast');
+        return false;
+    }
+
+    // Broadcast BACnet stack version to the network via UnconfirmedTextMessage
+    var stackVersionInfo = 'CAS BACnetStack v' + CASBACnetStack.stack.BACnetStack_GetAPIMajorVersion() + '.' + CASBACnetStack.stack.BACnetStack_GetAPIMinorVersion() + '.' + CASBACnetStack.stack.BACnetStack_GetAPIPatchVersion() + '.' + CASBACnetStack.stack.BACnetStack_GetAPIBuildVersion();
+    logger.debug('DEBUG: stackVersionInfo: ', stackVersionInfo);
+    var stackVersionInfoBuffer = Buffer.allocUnsafe(50);
+    var stackVersionInfoBufferLen = stackVersionInfoBuffer.write(stackVersionInfo, 'utf-8');
+    if (!CASBACnetStack.stack.BACnetStack_SendUnconfirmedTextMessage(DEVICE_INSTANCE, false, 0, ref.NULL_POINTER, 0, 0, stackVersionInfoBuffer, stackVersionInfoBufferLen, iAmConnectionString, CASBACnetStack.CONSTANTS.NETWORK_TYPE_BACNET_IP, true, 65535, ref.NULL_POINTER, 0)) {
+        logger.error('Unable to send UnconfirmedTextMessage broadcast');
+        return false;
+    }
 
     // Main program loop
     // ------------------------------------------------------------------------
