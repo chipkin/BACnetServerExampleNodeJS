@@ -13,7 +13,8 @@ var ffi = require('ffi-napi'); // DLL interface. https://github.com/node-ffi/nod
 var ref = require('ref-napi'); // DLL Data types. https://github.com/TooTallNate/ref
 var dequeue = require('dequeue'); // Creates a FIFO buffer. https://github.com/lleo/node-dequeue/
 const dgram = require('dgram'); // UDP server
-var network = require('network');
+const os = require('os'); // Retrieve network info
+var defaultGatewayLib = require('default-gateway'); // Retrieve network info
 const { truncate } = require('fs');
 const { privateDecrypt } = require('crypto');
 const { rejects } = require('assert');
@@ -22,6 +23,7 @@ const { rejects } = require('assert');
 const loggerObj = require('./logging');
 const { data } = require('./logging');
 const { debug } = require('console');
+const { defaultMaxListeners } = require('events');
 const logger = loggerObj.child({ label: 'BACnetServerNodeJSExample' });
 
 // Settings
@@ -391,7 +393,7 @@ function GetPropertyDate(deviceInstance, objectType, objectInstance, propertyIde
 
 function GetPropertyDouble(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex) {
     logger.debug('GetPropertyDouble - deviceInstance: ' + deviceInstance + ', objectType: ' + objectType + ', objectInstance: ' + objectInstance + ', propertyIdentifier: ' + propertyIdentifier + ', useArrayIndex: ' + useArrayIndex + ', propertyArrayIndex: ' + propertyArrayIndex);
-    
+
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
     var resultObjectType = HelperGetKeyByValue(CASBACnetStack.OBJECT_TYPE, objectType).toLowerCase();
@@ -637,7 +639,6 @@ function GetPropertySignedInteger(deviceInstance, objectType, objectInstance, pr
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
     var resultObjectType = HelperGetKeyByValue(CASBACnetStack.OBJECT_TYPE, objectType).toLowerCase();
-
 
     // Example to handle all other properties all at once without explicit checking for each type
     if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && typeof database[resultObjectType][objectInstance][resultPropertyIdentifier] !== 'undefined') {
@@ -1282,7 +1283,7 @@ function LogDebugMessage(message, messageLength, messageType) {
     console.log(CreateStringFromCharPointer(message, messageLength));
 }
 
-async function main() {
+function main() {
     // Print version information
     // ------------------------------------------------------------------------
     console.log('BACnet Server Example NodeJS');
@@ -1471,54 +1472,26 @@ async function main() {
     // Setup Network Parameters
     // ------------------------------------------------------------------------
     // Get Local IP
-    // TODO: Use manual values for now - couldn't retrieve network info properly
-    var localAddress = [192, 168, 1, 159];
+    // TODO: Use manual defaultGateway value for now - couldn't retrieve network info properly
+    var localAddress = [];
     var defaultGateway = [192, 168, 1, 20];
-    var subnetMask = [255, 255, 255, 0];
+    var subnetMask = [];
 
-    // Only one network adapter:
-    // const localNetwork = await new Promise((resolve) => {
-    //     network.get_active_interface((result, err) => {
-    //         if (err) {
-    //             logger.error('failed to get network interface information - ', err);
-    //             rejects(err);
-    //         } else {
-    //             resolve(result);
-    //         }
-    //     });
-    // });
-    // localAddress = localNetwork.ip_address.split('.').map(Number);
-    // defaultGateway = localNetwork.gateway_ip.split('.').map(Number);
-    // subnetMask = localNetwork.netmask.split('.').map(Number);
-
-    // Multiple network adapters:
-    const localNetworks = await new Promise((resolve, reject) => {
-        network.get_interfaces_list((err, result) => {
-            if (err) {
-                logger.error('failed to get network interface information - ' + err);
-                reject(err);
-            } else {
-                resolve(result);
+    // Get netmask and ip address
+    const networkInterfaces = os.networkInterfaces();
+    for (localNetwork in networkInterfaces) {
+        networkInterfaces[localNetwork].forEach(function (adapter) {
+            // NOTE: Specify your network here with your own filters
+            let addressIterator = adapter.address.split('.').map(Number);
+            if (addressIterator[0] === 192 && addressIterator[2] === 1) {
+                localAddress = adapter.address.split('.').map(Number);
+                subnetMask = adapter.netmask.split('.').map(Number);
             }
         });
-    });
-    for (localNetwork in localNetworks) {
-        // Specify your network here with your own filters
-        if (typeof localNetwork.ip_address !== 'undefined') {
-            let addressIterator = localNetwork.ip_address.split('.');
-            if (addressIterator[0] === 192) {
-                if (typeof localNetwork.ip_address !== 'undefined') {
-                    localAddress = localNetwork.ip_address.split('.').map(Number);
-                }
-                if (typeof localNetwork.gateway_ip !== 'undefined') {
-                    defaultGateway = localNetwork.gateway_ip.split('.').map(Number);
-                }
-                if (typeof localNetwork.netmask !== 'undefined') {
-                    subnetMask = localNetwork.netmask.split('.').map(Number);
-                }
-            }
-        }
     }
+
+    // Get defuault gateway
+    defaultGateway = defaultGatewayLib.v4.sync().gateway.split('.').map(Number);
 
     // Write Network Parameters to database
     database['network_port'][parseInt(Object.keys(database['network_port'])[0])].bacnetipudpport = SETTING_BACNET_PORT;
