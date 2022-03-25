@@ -1762,10 +1762,18 @@ async function main() {
 
     // Main program loop
     // ------------------------------------------------------------------------
+    var intervalCount = 1;
     console.log('FYI: Starting main program loop... ');
     setInterval(() => {
         CASBACnetStack.stack.BACnetStack_Loop();
-        // process.stdout.write(".");
+
+        // Increment Analog Value object Present Value every 10 seconds
+        if (intervalCount % 100 === 0) {
+            intervalCount = 1;
+            database['analog_value'][parseInt(Object.keys(database['analog_value'])[0])].present_value += 0.1;
+            CASBACnetStack.stack.BACnetStack_ValueUpdated(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.ANALOG_VALUE, parseInt(Object.keys(database['analog_value'])[0]), CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE);
+        }
+        intervalCount += 1;
     }, 100);
 }
 
