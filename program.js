@@ -1479,12 +1479,14 @@ function main() {
 
     // Get netmask and ip address
     const networkInterfaces = os.networkInterfaces();
+    var localAddressString = '';
     for (localNetwork in networkInterfaces) {
         networkInterfaces[localNetwork].forEach(function (adapter) {
             // NOTE: Specify your network here with your own filters
             let addressIterator = adapter.address.split('.').map(Number);
             if (addressIterator[0] === 192 && addressIterator[2] === 1) {
                 localAddress = adapter.address.split('.').map(Number);
+                localAddressString = adapter.address;
                 subnetMask = adapter.netmask.split('.').map(Number);
             }
         });
@@ -1540,7 +1542,7 @@ function main() {
 
     // TODO: We manual set server address until we find reliable way of getting ip
     server.bind({
-        address: '192.168.1.159',
+        address: localAddressString,
         port: SETTING_BACNET_PORT
     });
 
