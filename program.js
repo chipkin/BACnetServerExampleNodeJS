@@ -3,7 +3,7 @@
 // Start with the "function main()"
 //
 // Written by: Steven Smethurst
-// Last updated: Mar 24, 2022
+// Last updated: Mar 25, 2022
 //
 
 var CASBACnetStack = require('./CASBACnetStackAdapter'); // CAS BACnet stack
@@ -33,7 +33,7 @@ const SETTING_IP_ADDRESS = []; // Set IP Address to use for BACnet, set to [] to
 const SETTING_SUBNET_MASK = []; // Set Subnet Mask to use for BACnet, set to [] to discover
 
 // Constants
-const APPLICATION_VERSION = '1.1.0.0';
+const APPLICATION_VERSION = '1.2.0.0';
 
 // Globals
 var fifoSendBuffer = new dequeue();

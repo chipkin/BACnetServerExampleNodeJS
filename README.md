@@ -52,7 +52,7 @@ node program.js
 BACnet Server Example NodeJS
 https://github.com/chipkin/BACnetServerExampleNodeJS
 GetLibaryPath: ./bin/CASBACnetStack_x64_Debug.dll
-Application Version: 1.1.0.0, BACnetStack_Version: 3.30.2.0, BACnetStackAdapter_Version: 1.1.0.0
+Application Version: 1.2.0.0, BACnetStack_Version: 3.30.2.0, BACnetStackAdapter_Version: 1.1.0.0
 
 FYI: Setting up callback functions...
 FYI: Setting up BACnet device...
