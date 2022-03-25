@@ -28,7 +28,16 @@ A basic BACnet IP server example written in NodeJS using the [CAS BACnet Stack](
 ## Installation
 
 1. Place `CASBACnetStack_x64_Debug.dll` into `REPO_DIR/bin/`
-2. Run the following
+2. (optional) Set network settings at program.js:30, if left empty the program will get your system's active network configuration
+```js
+// Settings
+const SETTING_BACNET_PORT = 47808;  // Default BACnet IP UDP Port.
+const SETTING_DEFAULT_GATEWAY = []; // Set Default Gateway to use for BACnet (i.e. [192, 168, 1, 3])
+const SETTING_IP_ADDRESS = [];      // Set IP Address to use for BACnet (i.e. [192, 168, 1, 3])
+const SETTING_SUBNET_MASK = [];     // Set Subnet Mask to use for BACnet (i.e. [255, 255, 255, 0])
+```
+
+3. Run the following
 ```bash
 
 sudo apt install build-essential

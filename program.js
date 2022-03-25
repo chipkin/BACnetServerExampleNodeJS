@@ -28,6 +28,9 @@ const logger = loggerObj.child({ label: 'BACnetServerNodeJSExample' });
 
 // Settings
 const SETTING_BACNET_PORT = 47808; // Default BACnet IP UDP Port.
+const SETTING_DEFAULT_GATEWAY = []; // Set Default Gateway to use for BACnet, set to [] to discover
+const SETTING_IP_ADDRESS = []; // Set IP Address to use for BACnet, set to [] to discover
+const SETTING_SUBNET_MASK = []; // Set Subnet Mask to use for BACnet, set to [] to discover
 
 // Constants
 const APPLICATION_VERSION = '1.1.0.0';
@@ -1470,29 +1473,39 @@ function main() {
     console.log('OK');
 
     // Setup Network Parameters
+    // Skipped if network settings are configured - see README
     // ------------------------------------------------------------------------
     // Get Local IP
     var localAddress = [];
     var defaultGateway = [];
     var subnetMask = [];
 
-    // Get netmask and ip address
-    const networkInterfaces = os.networkInterfaces();
-    var localAddressString = '';
-    for (localNetwork in networkInterfaces) {
-        networkInterfaces[localNetwork].forEach(function (adapter) {
-            // NOTE: Specify your network here with your own filters
-            let addressIterator = adapter.address.split('.').map(Number);
-            if (addressIterator[0] === 192 && addressIterator[2] === 1) {
-                localAddress = adapter.address.split('.').map(Number);
-                localAddressString = adapter.address;
-                subnetMask = adapter.netmask.split('.').map(Number);
-            }
-        });
+    // Get netmask and ip address if not set
+    if (SETTING_IP_ADDRESS.length !== 4 || SETTING_SUBNET_MASK.length !== 4) {
+        const networkInterfaces = os.networkInterfaces();
+        var localAddressString = '';
+        for (localNetwork in networkInterfaces) {
+            networkInterfaces[localNetwork].forEach(function (adapter) {
+                // NOTE: Specify your network here with your own filters
+                let addressIterator = adapter.address.split('.').map(Number);
+                if (addressIterator[0] === 192 && addressIterator[2] === 1) {
+                    localAddress = adapter.address.split('.').map(Number);
+                    localAddressString = adapter.address;
+                    subnetMask = adapter.netmask.split('.').map(Number);
+                }
+            });
+        }
+    } else {
+        localAddress = SETTING_IP_ADDRESS;
+        localAddressString = SETTING_IP_ADDRESS[0] + '.' + SETTING_IP_ADDRESS[1] + '.' + SETTING_IP_ADDRESS[2] + '.' + SETTING_IP_ADDRESS[3];
+        subnetMask = SETTING_SUBNET_MASK;
     }
-
-    // Get defuault gateway
-    defaultGateway = defaultGatewayLib.v4.sync().gateway.split('.').map(Number);
+    // Get defuault gateway if not set
+    if (SETTING_DEFAULT_GATEWAY.length !== 4) {
+        defaultGateway = defaultGatewayLib.v4.sync().gateway.split('.').map(Number);
+    } else {
+        defaultGateway = SETTING_DEFAULT_GATEWAY;
+    }
 
     // Write Network Parameters to database
     database['network_port'][parseInt(Object.keys(database['network_port'])[0])].bacnetipudpport = SETTING_BACNET_PORT;
