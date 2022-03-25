@@ -3,7 +3,7 @@
 // Start with the "function main()"
 //
 // Written by: Steven Smethurst
-// Last updated: Oct 03, 2019
+// Last updated: Mar 24, 2022
 //
 
 var CASBACnetStack = require('./CASBACnetStackAdapter'); // CAS BACnet stack
