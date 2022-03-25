@@ -1472,9 +1472,8 @@ function main() {
     // Setup Network Parameters
     // ------------------------------------------------------------------------
     // Get Local IP
-    // TODO: Use manual defaultGateway value for now - couldn't retrieve network info properly
     var localAddress = [];
-    var defaultGateway = [192, 168, 1, 20];
+    var defaultGateway = [];
     var subnetMask = [];
 
     // Get netmask and ip address
