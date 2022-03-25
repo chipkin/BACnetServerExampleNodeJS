@@ -16,63 +16,232 @@ if (process.platform == "win32") {
 
 module.exports = {
     GetAdapterVersion: function GetAdapterVersion() {
-        return "1.0.0.0";
+        return "1.1.0.0";
     },
     GetLibaryPath: function GetLibaryPath() {
         return (CASBACNETSTACK_LIBARY_FILENAME);
     },
     stack: ffi.Library(CASBACNETSTACK_LIBARY_FILENAME, {
+        // Version Functions
+        // ==============================================================================================
         'BACnetStack_GetAPIMajorVersion': ['uint32', []],
         'BACnetStack_GetAPIMinorVersion': ['uint32', []],
         'BACnetStack_GetAPIPatchVersion': ['uint32', []],
         'BACnetStack_GetAPIBuildVersion': ['uint32', []],
 
+        // Main Loop
+        // ==============================================================================================
         'BACnetStack_Loop': ['void', []],
+        'BACnetStack_Tick': ['bool', []],
 
-        'BACnetStack_RegisterCallbackSendMessage': ['uint16', ['pointer']],
-        'BACnetStack_RegisterCallbackReceiveMessage': ['uint16', ['pointer']],
-        'BACnetStack_RegisterCallbackGetSystemTime': ['void', ['pointer']],
-
+        // Device Setup Functions
+        // ==============================================================================================
         'BACnetStack_AddDevice': ['bool', ['uint32']],
+        'BACnetStack_AddVirtualNetwork': ['bool', ['uint32', 'uint16', 'uint32']],
+        'BACnetStack_AddDeviceToVirtualNetwork': ['bool', ['uint32', 'uint16']],
+        'BACnetStack_AddObject': ['bool', ['uint32', 'uint16', 'uint32']],
+        'BACnetStack_AddNetworkPortObject': ['bool', ['uint32', 'uint16', 'uint8', 'uint8', 'uint32']],
+        'BACnetStack_AddTrendLogObject': ['bool', ['uint32', 'uint32', 'uint16', 'uint32', 'uint32', 'uint32', 'bool', 'uint32']],
+        'BACnetStack_AddTrendLogMultipleObject': ['bool', ['uint32', 'uint32', 'uint32']],
+        'BACnetStack_AddElevatorGroupObject': ['bool', ['uint32', 'uint32', 'uint32', 'uint8', 'bool', 'bool']],
+        'BACnetStack_AddLiftOrEscalatorObject': ['bool', ['uint32', 'uint16', 'uint32', 'uint32', 'uint8', 'uint8']],
+        'BACnetStack_AddNotificationClassObject': ['bool', ['uint32', 'uint32', 'uint8', 'uint8', 'uint8', 'bool', 'bool', 'bool']],
 
-        // bool BACnetStack_AddObject(const uint32_t deviceInstance, const uint16_t objectType, const uint32_t objectInstance)
-        'BACnetStack_AddObject': ['bool', ['uint32', 'uint16', 'uint32',]],
+        // Property Setup Functions
+        // ==============================================================================================
+        'BACnetStack_SetPropertyEnabled': ['bool', ['uint32', 'uint16', 'uint32', 'uint32', 'bool']],
+        'BACnetStack_SetPropertyByObjectTypeEnabled': ['bool', ['uint32', 'uint16', 'uint32', 'bool']],
+        'BACnetStack_SetProprietaryProperty': ['bool', ['uint32', 'uint16', 'uint32', 'uint32', 'bool', 'bool', 'uint32', 'bool', 'bool', 'bool']],
+        'BACnetStack_SetPropertyWritable': ['bool', ['uint32', 'uint16', 'uint32', 'uint32', 'bool']],
+        'BACnetStack_SetPropertyByObjectTypeWritable': ['bool', ['uint32', 'uint16', 'uint32', 'bool']],
+        'BACnetStack_SetPropertySubscribable': ['bool', ['uint32', 'uint16', 'uint32', 'uint32', 'bool']],
+        'BACnetStack_SetPropertyByObjectTypeSubscribable': ['bool', ['uint32', 'uint16', 'uint32', 'bool']],
+        'BACnetStack_SetObjectTypeCreatable': ['bool', ['uint32', 'uint16', 'bool']],
+        'BACnetStack_SetObjectTypeSupported': ['bool', ['uint32', 'uint16', 'bool']],
+        'BACnetStack_SetServiceEnabled': ['bool', ['uint32', 'uint32', 'bool']],
+        'BACnetStack_SetMaxActiveCOVSubscriptions': ['bool', ['uint32', 'uint32']],
+        'BACnetStack_SetCOVSettings': ['bool', ['uint32', 'uint32', 'uint32']],
+        'BACnetStack_SetTrendLogTypeToPolled': ['bool', ['uint32', 'uint16', 'uint32', 'bool', 'bool', 'uint32']],
+        'BACnetStack_SetTrendLogTypeToCOV': ['bool', ['uint32', 'uint32', 'bool', 'bool', 'bool', 'float']],
+        'BACnetStack_SetTrendLogTypeToTriggered': ['bool', ['uint32', 'uint16', 'uint32', 'bool', 'bool']],
+        'BACnetStack_SetTrendLogStartStopTime': ['bool', ['uint32', 'uint16', 'uint32', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8']],
+        'BACnetStack_AddLoggedObjectToTrendLogMultiple': ['bool', ['uint32', 'uint32', 'uint16', 'uint32', 'uint32', 'bool', 'uint32', 'bool', 'uint32']],
+        'BACnetStack_SetLiftHigherLowerDeck': ['bool', ['uint32', 'uint32', 'uint32', 'uint32']],
+        'BACnetStack_SetLiftOrEscalatorEnergyMeterRef': ['bool', ['uint32', 'uint16', 'uint32', 'bool', 'uint32', 'uint16', 'uint32']],
+        'BACnetStack_RemoveDevice': ['void', ['uint32']],
+        'BACnetStack_RemoveObject': ['bool', ['uint32', 'uint16', 'uint32']],
+        'BACnetStack_InsertTrendLogRecord': ['bool', ['uint32', 'uint32', 'uint64', 'uint8', 'pointer', 'uint32', 'pointer', 'uint32']],
+        'BACnetStack_ReadTrendLogRecord': ['bool', ['uint32', 'uint32', 'uint32', 'pointer', 'pointer', 'pointer', 'pointer', 'uint32', 'pointer', 'pointer', 'uint32', 'pointer']],
+        'BACnetStack_InsertTrendLogMultipleRecord': ['bool', ['uint32', 'uint32', 'uint64', 'uint8', 'pointer', 'uint32']],
+        'BACnetStack_ReadTrendLogMultipleRecord': ['bool', ['uint32', 'uint32', 'uint32', 'pointer', 'pointer', 'pointer', 'pointer', 'uint32', 'pointer']],
+        'BACnetStack_AddRecipientToNotificationClass': ['bool', ['uint32', 'uint32', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8', 'uint32', 'bool', 'bool', 'bool', 'bool', 'bool', 'uint32', 'bool', 'uint16', 'pointer', 'uint32']],
 
-        // GetProperty
-        'BACnetStack_RegisterCallbackGetPropertyCharacterString': ['void', ['pointer']],
-        'BACnetStack_RegisterCallbackGetPropertyReal': ['void', ['pointer']],
+        // Alarm and Event Setup Functions
+        // ==============================================================================================
+        'BACnetStack_EnableAlarmsAndEventsForObject': ['bool', ['uint32', 'uint16', 'uint32', 'uint32', 'uint8', 'bool', 'bool', 'bool', 'bool']],
+        'BACnetStack_SetIntrinsicOutOfRangeAlgorithm': ['bool', ['uint32', 'uint16', 'uint32', 'float', 'float', 'float', 'bool', 'bool', 'uint32', 'bool', 'uint32', 'bool']],        
+        'BACnetStack_SetIntrinsicChangeOfStateAlgorithmBool': ['bool', ['uint32', 'uint16', 'uint32', 'bool', 'uint32', 'bool', 'uint32', 'bool']],        
+        'BACnetStack_SetFaultOutOfRangeAlgorithmReal': ['bool', ['uint32', 'uint16', 'uint32', 'float', 'float', 'bool']],        
+        'BACnetStack_SetFaultListedAlgorithm': ['bool', ['uint32', 'uint16', 'uint32', 'bool']],
+
+        // Data Notification Functions
+        // ==============================================================================================
+        'BACnetStack_ValueUpdated': ['void', ['uint32', 'uint16', 'uint32', 'uint32']],
+
+
+        // Callback Registration Functions
+        // =======================================================
+        // Send and Receive Message Functions
+        'BACnetStack_RegisterCallbackReceiveMessage': ['void', ['pointer']],
+        'BACnetStack_RegisterCallbackSendMessage': ['void', ['pointer']],
+
+        // System Functions
+        'BACnetStack_RegisterCallbackGetSystemTime': ['void', ['pointer']],
+        'BACnetStack_RegisterCallbackSetSystemTime': ['void', ['pointer']],
+
+        // Get Data Functions
+        'BACnetStack_RegisterCallbackGetPropertyBitString': ['void', ['pointer']],
         'BACnetStack_RegisterCallbackGetPropertyBool': ['void', ['pointer']],
-        'BACnetStack_RegisterCallbackGetPropertyEnumerated': ['void', ['pointer']],
+        'BACnetStack_RegisterCallbackGetPropertyCharacterString': ['void', ['pointer']],
         'BACnetStack_RegisterCallbackGetPropertyDate': ['void', ['pointer']],
         'BACnetStack_RegisterCallbackGetPropertyDouble': ['void', ['pointer']],
+        'BACnetStack_RegisterCallbackGetPropertyEnumerated': ['void', ['pointer']],
         'BACnetStack_RegisterCallbackGetPropertyOctetString': ['void', ['pointer']],
         'BACnetStack_RegisterCallbackGetPropertySignedInteger': ['void', ['pointer']],
+        'BACnetStack_RegisterCallbackGetPropertyReal': ['void', ['pointer']],
         'BACnetStack_RegisterCallbackGetPropertyTime': ['void', ['pointer']],
         'BACnetStack_RegisterCallbackGetPropertyUnsignedInteger': ['void', ['pointer']],
 
-        // Set Propery 
-        'BACnetStack_RegisterCallbackSetPropertyReal': ['void', ['pointer']],
-        'BACnetStack_RegisterCallbackSetPropertyEnumerated': ['void', ['pointer']],
+        // Specific Property Get Data Functions
+        'BACnetStack_RegisterCallbackGetListOfEnumerations': ['void', ['pointer']],
+        'BACnetStack_RegisterCallbackGetListElevatorGroupLandingCallStatus': ['void', ['pointer']],
+        'BACnetStack_RegisterCallbackGetSequenceLiftRegisteredCarCall': ['void', ['pointer']],
+        'BACnetStack_RegisterCallbackGetSequenceLiftAssignedLandingCall': ['void', ['pointer']],
+        'BACnetStack_RegisterCallbackGetSequenceLiftLandingDoorStatus': ['void', ['pointer']],
+
+        // Set Data Functions
         'BACnetStack_RegisterCallbackSetPropertyBitString': ['void', ['pointer']],
         'BACnetStack_RegisterCallbackSetPropertyBool': ['void', ['pointer']],
         'BACnetStack_RegisterCallbackSetPropertyCharacterString': ['void', ['pointer']],
         'BACnetStack_RegisterCallbackSetPropertyDate': ['void', ['pointer']],
         'BACnetStack_RegisterCallbackSetPropertyDouble': ['void', ['pointer']],
+        'BACnetStack_RegisterCallbackSetPropertyEnumerated': ['void', ['pointer']],
         'BACnetStack_RegisterCallbackSetPropertyNull': ['void', ['pointer']],
         'BACnetStack_RegisterCallbackSetPropertyOctetString': ['void', ['pointer']],
         'BACnetStack_RegisterCallbackSetPropertySignedInteger': ['void', ['pointer']],
+        'BACnetStack_RegisterCallbackSetPropertyReal': ['void', ['pointer']],
         'BACnetStack_RegisterCallbackSetPropertyTime': ['void', ['pointer']],
         'BACnetStack_RegisterCallbackSetPropertyUnsignedInteger': ['void', ['pointer']],
+
+        // Specific Property Set Data Functions
         'BACnetStack_RegisterCallbackSetElevatorGroupLandingCallControl': ['void', ['pointer']],
 
-        // 
-        'BACnetStack_SetServiceEnabled': ['void', ['uint32', 'uint32', 'bool']],
-        'BACnetStack_SetPropertyWritable': ['void', ['uint32', 'uint16', 'uint32', 'uint32', 'bool']],
-        'BACnetStack_SetPropertyEnabled': ['void', ['uint32', 'uint16', 'uint32', 'uint32', 'bool']],
-        'BACnetStack_SetPropertyByObjectTypeWritable': ['void', ['uint32', 'uint16', 'uint32', 'uint32', 'bool']],
-        'BACnetStack_SetPropertyByObjectTypeEnabled': ['void', ['uint32', 'uint16', 'uint32', 'uint32', 'bool']],
-        'BACnetStack_ValueUpdated': ['void', ['uint32', 'uint16', 'uint32', 'uint32']],
+        // Object Creation Functions
+        'BACnetStack_RegisterCallbackCreateObject': ['void', ['pointer']],
+        'BACnetStack_RegisterCallbackDeleteObject': ['void', ['pointer']],
 
+        // Remote Device Management Functions
+        'BACnetStack_RegisterCallbackReinitializeDevice': ['void', ['pointer']],
+        'BACnetStack_RegisterCallbackDeviceCommunicationControl': ['void', ['pointer']],
+
+        // Alarm and Event Functions
+        'BACnetStack_RegisterCallbackAcknowledgeAlarm': ['void', ['pointer']],
+
+        // Debug Message Functions
+        'BACnetStack_RegisterCallbackLogDebugMessage': ['void', ['pointer']],
+
+
+        // Client Functions
+        // ==========================================================
+        // BVLL Messages - BACnet IP Only
+        'BACnetStack_SendRegisterForeignDevice': ['bool', ['uint16', 'pointer', 'uint8']],
+
+        // BBMD Functions
+        'BACnetStack_SendReadBroadcastDistributionTable': ['bool', ['pointer', 'uint8']],
+        'BACnetStack_SendReadForeignDeviceTable': ['bool', ['pointer', 'uint8']],
+        'BACnetStack_SetBBMD': ['bool', ['uint32', 'uint32']],
+        'BACnetStack_GetBDTEntry': ['bool', ['uint16', 'pointer', 'uint8', 'pointer', 'uint8']],
+        'BACnetStack_GetFDTEntry': ['bool', ['uint16', 'pointer', 'uint8', 'pointer', 'pointer']],
+        'BACnetStack_AddBDTEntry': ['bool', ['pointer', 'uint8', 'pointer', 'uint8']],
+        'BACnetStack_DeleteBDTEntry': ['bool', ['uint16']],
+        'BACnetStack_DeleteFDTEntry': ['bool', ['uint16']],
+        'BACnetStack_ClearForeignDeviceTable': ['bool', []],
+        'BACnetStack_ClearBroadcastDistributionTable': ['bool', []],
+
+        // NPDU Messages
+        'BACnetStack_SendIAmRouterToNetwork': ['bool', ['pointer', 'uint8', 'uint8', 'bool', 'uint16', 'pointer', 'uint8']],
+
+        // APDU Messages
+        'BACnetStack_SendSubscribeCOV': ['bool', ['pointer', 'uint32', 'uint16', 'uint32', 'bool', 'uint32', 'pointer', 'uint8', 'uint8', 'uint16', 'pointer', 'uint8']],
+        'BACnetStack_SendCancelSubscribeCOV': ['bool', ['pointer', 'uint32', 'uint16', 'uint32', 'pointer', 'uint8', 'uint8', 'uint16', 'pointer', 'uint8']],
+        'BACnetStack_SendUnsubscribedUnconfirmedCOVNotification': ['bool', ['uint32', 'uint16', 'uint32', 'uint32', 'pointer', 'uint8', 'uint8', 'uint16', 'pointer', 'uint8']],
+
+        // Object Access Services
+        'BACnetStack_BuildReadProperty': ['bool', ['uint16', 'uint32', 'uint32', 'bool' , 'uint32']],
+        'BACnetStack_ClearReadProperty': ['void', []],
+        'BACnetStack_SendReadProperty': ['bool', ['pointer', 'pointer', 'uint8', 'uint8', 'uint16', 'pointer', 'uint8']],
+        'BACnetStack_SendReadPropertyAsync': ['bool', ['pointer', 'pointer', 'uint8', 'uint8', 'uint16', 'pointer', 'uint8', 'uint8', 'pointer']],
+        'BACnetStack_SendReadPropertySingleAsync': ['bool', ['pointer', 'uint16', 'uint32', 'uint32', 'bool', 'uint32', 'pointer', 'uint8', 'uint8', 'uint16',  'pointer', 'uint8']],
+        'BACnetStack_SendReadPropertyMultipleAsync': ['bool', ['pointer', 'uint8', 'pointer', 'pointer', 'uint8', 'uint8', 'uint16',  'pointer', 'uint8']],
+        'BACnetStack_BuildWriteProperty': ['bool', ['uint8', 'pointer', 'uint32', 'uint16',  'uint32', 'uint32', 'bool', 'uint32', 'bool', 'uint8']],
+        'BACnetStack_ClearWriteProperty': ['void', []],
+        'BACnetStack_SendWriteProperty': ['bool', ['pointer',  'pointer',  'uint8', 'uint8', 'uint16',  'pointer',  'uint8',]],
+        'BACnetStack_SendWritePropertyAsync': ['bool', ['pointer', 'pointer', 'uint8', 'uint8', 'uint16',  'pointer', 'uint8', 'uint8', 'pointer', 'uint16']],
+        'BACnetStack_BuildCreateObjectInitialPropertyValues': ['bool', ['uint32', 'uint8', 'pointer', 'uint32']],
+        'BACnetStack_ClearCreateObjectInitialPropertyValues': ['void', []],
+        'BACnetStack_SendCreateObjectByType': ['bool', ['pointer', 'uint16', 'pointer', 'uint8', 'uint8', 'uint16', 'pointer', 'uint8']],
+        'BACnetStack_SendCreateObjectByIdentifier': ['bool', ['pointer', 'uint16', 'uint32', 'pointer', 'uint8', 'uint8', 'uint16', 'pointer', 'uint8']],
+        'BACnetStack_SendDeleteObject': ['bool', ['pointer', 'uint16', 'uint32', 'pointer', 'uint8', 'uint8', 'uint16', 'pointer', 'uint8']],
+        'BACnetStack_SendReadRange': ['bool', ['pointer', 'uint16', 'uint32', 'uint32', 'bool', 'uint32', 'pointer', 'uint8', 'uint8', 'uint16', 'pointer', 'uint8']],
+        'BACnetStack_SendReadRangeByPosition': ['bool', ['pointer', 'uint16', 'uint32', 'uint32', 'bool', 'uint32', 'uint32', 'int16', 'pointer', 'uint8', 'uint8', 'uint16', 'pointer', 'uint8']],
+        'BACnetStack_SendReadRangeBySequenceNumber': ['bool', ['pointer', 'uint16', 'uint32', 'uint32', 'bool', 'uint32', 'uint32', 'int16', 'pointer', 'uint8', 'uint8', 'uint16', 'pointer', 'uint8']],
+        'BACnetStack_SendReadRangeByTime': ['bool', ['pointer', 'uint16', 'uint32', 'uint32', 'bool', 'uint32', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8', 'int16', 'pointer', 'uint8', 'uint8', 'uint16', 'pointer', 'uint8']],
+
+        // Remote Device Management Services
+        'BACnetStack_SendIAm': ['bool', ['uint32', 'pointer', 'uint8', 'uint8', 'bool', 'uint16', 'pointer', 'uint8',]],
+        'BACnetStack_SendWhoIs': ['bool', ['pointer', 'uint8', 'uint8', 'bool', 'uint16', 'pointer', 'uint8',]],
+        'BACnetStack_SendWhoIsWithLimits': ['bool', ['uint32', 'uint32', 'pointer', 'uint8', 'uint8', 'bool', 'uint16', 'pointer', 'uint8',]],
+        'BACnetStack_SendWhoHasWithObjectIdentifier': ['bool', ['uint16', 'uint32', 'pointer', 'uint8', 'uint8', 'bool', 'uint16', 'pointer', 'uint8',]],
+        'BACnetStack_SendWhoHasWithObjectName': ['bool', ['pointer', 'uint32', 'pointer', 'uint8', 'uint8', 'bool', 'uint16', 'pointer', 'uint8',]],
+        'BACnetStack_SendTimeSynchronization': ['bool', ['uint8', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8', 'pointer', 'uint8', 'uint8', 'bool', 'uint16', 'pointer', 'uint8',]],
+        'BACnetStack_SendUTCTimeSynchronization': ['bool', ['uint8', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8', 'pointer', 'uint8', 'uint8', 'bool', 'uint16', 'pointer', 'uint8',]],
+        'BACnetStack_SendReinitializeDevice': ['bool', ['pointer', 'uint8', 'pointer', 'uint8', 'pointer', 'uint8', 'uint8', 'uint16', 'pointer', 'uint8',]],
+        'BACnetStack_SendDeviceCommunicatonControl': ['bool', ['pointer', 'uint8', 'bool', 'uint16', 'pointer', 'uint8', 'pointer', 'uint8', 'uint8', 'uint16', 'pointer', 'uint8',]],
+        'BACnetStack_SendConfirmedTextMessage': ['bool', ['pointer', 'uint32', 'bool', 'uint32', 'pointer', 'uint32', 'uint8', 'pointer', 'uint32', 'pointer', 'uint8', 'uint8', 'uint16', 'pointer', 'uint8',]],
+        'BACnetStack_SendUnconfirmedTextMessage': ['bool', ['uint32', 'bool', 'uint32', 'pointer', 'uint32', 'uint8', 'pointer', 'uint32', 'pointer', 'uint8', 'uint8', 'bool', 'uint16', 'pointer', 'uint8',]],
+
+        // Client Hooks
+        // ============================================================
+        // Hooks for Unconfirmed Services
+        'BACnetStack_RegisterHookIAm': ['void', ['pointer']],
+        'BACnetStack_RegisterHookIHave': ['void', ['pointer']],
+        'BACnetStack_RegisterHookTextMessage': ['void', ['pointer']],
+
+        // Hooks for simple PDUs
+        'BACnetStack_RegisterHookError': ['void', ['pointer']],
+        'BACnetStack_RegisterHookReject': ['void', ['pointer']],
+        'BACnetStack_RegisterHookAbort': ['void', ['pointer']],
+        'BACnetStack_RegisterHookSimpleAck': ['void', ['pointer']],
+        'BACnetStack_RegisterHookTimeout': ['void', ['pointer']],
+
+        // Hooks for different ComplexAck PDUs
+        'BACnetStack_RegisterHookPropertyBitString': ['void', ['pointer']],
+        'BACnetStack_RegisterHookPropertyBool': ['void', ['pointer']],
+        'BACnetStack_RegisterHookPropertyCharString': ['void', ['pointer']],
+        'BACnetStack_RegisterHookPropertyDate': ['void', ['pointer']],
+        'BACnetStack_RegisterHookPropertyDouble': ['void', ['pointer']],
+        'BACnetStack_RegisterHookPropertyEnum': ['void', ['pointer']],
+        'BACnetStack_RegisterHookPropertyNull': ['void', ['pointer']],
+        'BACnetStack_RegisterHookPropertyObjectIdentifier': ['void', ['pointer']],
+        'BACnetStack_RegisterHookPropertyOctString': ['void', ['pointer']],
+        'BACnetStack_RegisterHookPropertyInt': ['void', ['pointer']],
+        'BACnetStack_RegisterHookPropertyReal': ['void', ['pointer']],
+        'BACnetStack_RegisterHookPropertyTime': ['void', ['pointer']],
+        'BACnetStack_RegisterHookPropertyUInt': ['void', ['pointer']],
+
+        // Settings Functions
+        // ========================================================
+        'BACnetStack_SetBACnetStackSetting': ['bool', ['uint32', 'uint32']],
 
     }),
 
@@ -905,9 +1074,57 @@ module.exports = {
         PH: 234,
         GRAMSPERSQUAREMETER: 235,
         MINUTESPERDEGREEKELVIN: 236
+    },
+
+    CONSTANTS: {
+        // General Constants
+        NETWORK_PORT_LOWEST_PROTOCOL_LAYER: 4194303,
+
+        // Priority Array
+        MAX_BACNET_PRIORITY: 16,
+
+        // Network Port FdBbmdAddressOffset
+        FD_BBMD_ADDRESS_HOST: 1,
+        FD_BBMD_ADDRESS_PORT: 2,
+
+        // Network Types
+        NETWORK_TYPE_BACNET_IP: 0,
+        NETWORK_TYPE_IPV4: 5,
+
+        // Protocol Level
+        PROTOCOL_LEVEL_BACNET_APPLICATION: 2,
+
+        // Trend Log Buffer Size
+        MAX_TREND_LOG_MAX_BUFFER_SIZE: 100,
+
+        // Reinitialized State
+        REINITIALIZED_STATE_WARM_START: 1,
+        REINITIALIZED_STATE_ACTIVATE_CHANGES: 7
+    },
+
+    DATA_TYPES: {
+        NULL: 0,
+	    BOOLEAN: 1,
+	    UNSIGNED_INTEGER: 2,
+	    SIGNED_INTEGER: 3,
+	    REAL: 4,
+	    DOUBLE: 5,
+	    OCTET_STRING: 6,
+	    CHARACTER_STRING: 7,
+	    BIT_STRING: 8,
+	    ENUMERATED: 9,
+	    DATE: 10,
+	    TIME: 11,
+	    BACNET_OBJECT_IDENTIFIER: 12,
+	    DATETIME: 27
+    },
+
+    ERROR_CODES: {
+        MISSING_REQUIRED_PARAMETER: 16,
+        NO_SPACE_TO_WRITE_PROPERTY: 20,
+        PASSWORD_FAILURE: 26,
+        VALUE_OUT_OF_RANGE: 37,
+        OPTIONAL_FUNCTIONALITY_NOT_SUPPORTED: 45,
+        INVALID_CONFIGURATION_DATA: 46
     }
-
-
-
-
 };
