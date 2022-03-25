@@ -21,6 +21,7 @@ const { rejects } = require('assert');
 // Logger
 const loggerObj = require('./logging');
 const { data } = require('./logging');
+const { debug } = require('console');
 const logger = loggerObj.child({ label: 'BACnetServerNodeJSExample' });
 
 // Settings
@@ -81,11 +82,11 @@ var FuncPtrCallbackLogDebugMessage = ffi.Callback('void', ['uint8*', 'uint16', '
 
 // Helper Functions
 function CreateStringFromCharPointer(charPointer, length) {
+    let messageToRead = ref.reinterpret(charPointer, length, 0);
     let workingString = '';
     for (let offset = 0; offset < length; offset++) {
-        workingString += String.fromCharCode(charPointer.readUInt8(offset));
+        workingString += String.fromCharCode(messageToRead.readUInt8(offset));
     }
-    logger.debug('String creation output: ', workingString);
     return workingString;
 }
 
@@ -94,14 +95,18 @@ function CallbackSendMessage(message, messageLength, connectionString, connectio
     // Convert the connection string to a buffer.
     var newConnectionString = ref.reinterpret(connectionString, connectionStringLength, 0);
     var host = newConnectionString.readUInt8(0) + '.' + newConnectionString.readUInt8(1) + '.' + newConnectionString.readUInt8(2) + '.' + newConnectionString.readUInt8(3);
-    var port = Number(newConnectionString.readUInt8(5)) * 255 + Number(newConnectionString.readUInt8(4));
-    logger.debug('CallbackSendMessage. messageLength:', messageLength, ', host: ', host, ', port:', port);
+    var port = newConnectionString.readUInt8(4) * 256 + newConnectionString.readUInt8(5);
+    logger.debug('CallbackSendMessage. messageLength: ' + messageLength + ', host: ' + host + ', port:' + port);
 
     // copy the message to the sendBuffer.
     var newMessage = ref.reinterpret(message, messageLength, 0);
     sendBuffer = Buffer.alloc(messageLength);
     for (var offset = 0; offset < messageLength; ++offset) {
         sendBuffer.writeUInt8(newMessage[offset], offset);
+    }
+    if (port <= 0 || port >= 65536) {
+        logger.error('Failed to CallbackSendMessage');
+        return 0;
     }
 
     // Send the message.
@@ -110,13 +115,13 @@ function CallbackSendMessage(message, messageLength, connectionString, connectio
             logger.error('Error: Could not send message');
             server.close();
         } else {
-            logger.debug('CallbackSendMessage. Length:', newMessage.length);
+            logger.debug('CallbackSendMessage. Length: ' + newMessage.length);
             return newMessage.length;
         }
     });
 
-    // Error
-    return 0;
+    // TODO: server.send is async, for now we trigger unelegant error-out if an error occurs when server is trying to send
+    return newMessage.length;
 }
 
 // This callback fundtion is used when the CAS BACnet stack wants to check to see if there are any incomming messages
@@ -128,27 +133,29 @@ function CallbackRecvMessage(message, maxMessageLength, receivedConnectionString
 
         const recvedMessage = msg[0];
 
-        logger.debug('\nCallbackRecvMessage Got message. Length:', msg[0].length, ', From:', msg[1], ', Message: ', msg[0].toString('hex'));
+        logger.debug('\nCallbackRecvMessage Got message. Length: ' + msg[0].length + ', From:' + msg[1] + ', Message: ' + msg[0].toString('hex'));
 
         if (msg[0].length > maxMessageLength) {
-            logger.error('Error: Message too large to fit into buffer on Recv. Dumping message. msg[0].length=', msg[0].length, ', maxMessageLength=', maxMessageLength);
+            logger.error('Error: Message too large to fit into buffer on Recv. Dumping message. msg[0].length=' + msg[0].length + ', maxMessageLength=' + maxMessageLength);
             return 0;
         }
 
         // Received Connection String
         // --------------------------------------------------------------------
+        logger.debug('maxConnectionStringLength:' + maxConnectionStringLength);
 
-        logger.debug('maxConnectionStringLength:', maxConnectionStringLength);
+        // Extract address and port
+        var receivedAddress = msg[1].substring(0, msg[1].indexOf(':')).split('.').map(Number);
+        var receivedPort = parseInt(msg[1].substring(msg[1].indexOf(':') + 1));
 
         // Reinterpret the receivedConnectionString parameter with a the max buffer size.
         var newReceivedConnectionString = ref.reinterpret(receivedConnectionString, maxConnectionStringLength, 0);
-        // ToDo:
-        newReceivedConnectionString.writeUInt8(192, 0);
-        newReceivedConnectionString.writeUInt8(168, 1);
-        newReceivedConnectionString.writeUInt8(1, 2);
-        newReceivedConnectionString.writeUInt8(26, 3);
-        newReceivedConnectionString.writeUInt8(47808 % 255, 4);
-        newReceivedConnectionString.writeUInt8(47808 / 255, 5);
+        newReceivedConnectionString.writeUInt8(receivedAddress[0], 0);
+        newReceivedConnectionString.writeUInt8(receivedAddress[1], 1);
+        newReceivedConnectionString.writeUInt8(receivedAddress[2], 2);
+        newReceivedConnectionString.writeUInt8(receivedAddress[3], 3);
+        newReceivedConnectionString.writeUInt8(receivedPort / 256, 4);
+        newReceivedConnectionString.writeUInt8(receivedPort % 256, 5);
 
         // Connection string length
         receivedConnectionStringLength.writeUInt8(6, 0);
@@ -182,7 +189,7 @@ function HelperGetKeyByValue(object, value) {
 // This callback is used by the CAS BACnet stack to get a property of an object as a string.
 // If the property is not defined then return false and the CAS BACnet stack will use a default value.
 function GetPropertyBitString(deviceInstance, objectType, objectInstance, propertyIdentifier, value, valueElementCount, maxElementCount, useArrayIndex, propertyArrayIndex) {
-    logger.debug('GetPropertyBool - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex);
+    logger.debug('GetPropertyBitString - deviceInstance: ' + deviceInstance + ', objectType: ' + objectType + ', objectInstance: ' + objectInstance + ', propertyIdentifier: ' + propertyIdentifier + ', useArrayIndex: ' + useArrayIndex + ', propertyArrayIndex: ' + propertyArrayIndex);
 
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
@@ -195,8 +202,9 @@ function GetPropertyBitString(deviceInstance, objectType, objectInstance, proper
         bitValue = database[resultObjectType][objectInstance][resultPropertyIdentifier];
 
         // Write bits into pointer
+        var newValue = ref.reinterpret(value, bitValue.length, 0);
         for (let i = 0; i < maxElementCount && i < bitValue.length; i++) {
-            ref.set(value, 0, bitValue[i]);
+            newValue.writeUint8(bitValue[i], i);
         }
         valueElementCount.writeInt32LE(maxElementCount < bitValue.length ? maxElementCount : bitValue.length);
         return true;
@@ -212,7 +220,7 @@ function GetPropertyBitString(deviceInstance, objectType, objectInstance, proper
 // If the property is not defined then return false and the CAS BACnet stack will use a default value.
 
 function GetPropertyBool(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex) {
-    logger.debug('GetPropertyBool - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex);
+    logger.debug('GetPropertyBool - deviceInstance: ' + deviceInstance + ', objectType: ' + objectType + ', objectInstance: ' + objectInstance + ', propertyIdentifier: ' + propertyIdentifier + ', useArrayIndex: ' + useArrayIndex + ', propertyArrayIndex: ' + propertyArrayIndex);
 
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
@@ -220,19 +228,15 @@ function GetPropertyBool(deviceInstance, objectType, objectInstance, propertyIde
 
     // Example of getting Priority array Null handling
     if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.PRIORITY_ARRAY) {
-        if (useArrayIndex) {
+        if (useArrayIndex && propertyArrayIndex <= CASBACnetStack.CONSTANTS.MAX_BACNET_PRIORITY) {
             if (objectType === CASBACnetStack.OBJECT_TYPE.ANALOG_OUTPUT) {
-                if (propertyArrayIndex <= CASBACnetStack.CONSTANTS.MAX_BACNET_PRIORITY) {
-                    ref.set(value, 0, database[resultObjectType][objectInstance][priority_array_nulls][propertyArrayIndex - 1]);
-                    return true;
-                }
+                ref.set(value, 0, database[resultObjectType][objectInstance]['priority_array_nulls'][propertyArrayIndex - 1]);
+                return true;
             } else if (objectType === CASBACnetStack.OBJECT_TYPE.BINARY_OUTPUT) {
-                if (propertyArrayIndex <= CASBACnetStack.CONSTANTS.MAX_BACNET_PRIORITY) {
-                    ref.set(value, 0, database[resultObjectType][objectInstance][priority_array_nulls][propertyArrayIndex - 1]);
-                    return true;
-                }
-            } else if (objectType == CASBACnetStack.OBJECT_TYPE.MULTI_STATE_OUTPUT) {
-                ref.set(value, 0, database[resultObjectType][objectInstance][priority_array_nulls][propertyArrayIndex - 1]);
+                ref.set(value, 0, database[resultObjectType][objectInstance]['priority_array_nulls'][propertyArrayIndex - 1]);
+                return true;
+            } else if (objectType === CASBACnetStack.OBJECT_TYPE.MULTI_STATE_OUTPUT) {
+                ref.set(value, 0, database[resultObjectType][objectInstance]['priority_array_nulls'][propertyArrayIndex - 1]);
                 return true;
             }
         }
@@ -243,7 +247,16 @@ function GetPropertyBool(deviceInstance, objectType, objectInstance, propertyIde
 }
 
 function GetPropertyCharacterString(deviceInstance, objectType, objectInstance, propertyIdentifier, value, valueElementCount, maxElementCount, encodingType, useArrayIndex, propertyArrayIndex) {
-    logger.debug('GetPropertyCharacterString - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', maxElementCount: ', maxElementCount, ', encodingType: ', encodingType);
+    logger.debug('GetPropertyCharacterString - deviceInstance: ' + deviceInstance + ', objectType: ' + objectType + ', objectInstance: ' + objectInstance + ', propertyIdentifier: ' + propertyIdentifier + ', useArrayIndex: ' + useArrayIndex + ', propertyArrayIndex: ' + propertyArrayIndex + ', maxElementCount: ' + maxElementCount + ', encodingType: ' + encodingType);
+
+    var newValue = ref.reinterpret(value, maxElementCount, 0);
+
+    // Check for Analog Input object Proprietary Properties
+    if (objectType === CASBACnetStack.OBJECT_TYPE.ANALOG_INPUT && propertyIdentifier > 512 && propertyIdentifier <= 512 + 3 && typeof database['analog_input'][objectInstance] !== 'undefined') {
+        newValue.write('Example custom property 512 + ' + (propertyIdentifier - 512).toString(), 0, 'utf8');
+        valueElementCount.writeInt32LE('Example custom property 512 + 1'.length, 0);
+        return true;
+    }
 
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
@@ -255,8 +268,6 @@ function GetPropertyCharacterString(deviceInstance, objectType, objectInstance, 
             // The property has been defined.
             // Convert the property to the requested data type and return success.
             charValue = database[resultObjectType][objectInstance][resultPropertyIdentifier];
-
-            var newValue = ref.reinterpret(value, maxElementCount, 0);
             newValue.write(charValue, 0, 'utf8');
             valueElementCount.writeInt32LE(charValue.length, 0);
             return true;
@@ -264,8 +275,6 @@ function GetPropertyCharacterString(deviceInstance, objectType, objectInstance, 
         // Check for created Analog Value objects
         else if (objectType === CASBACnetStack.OBJECT_TYPE.ANALOG_VALUE && typeof database['created_analog_value'][objectInstance] !== 'undefined') {
             charValue = database['created_analog_value'][objectInstance][resultPropertyIdentifier];
-
-            var newValue = ref.reinterpret(value, maxElementCount, 0);
             newValue.write(charValue, 0, 'utf8');
             valueElementCount.writeInt32LE(charValue.length, 0);
             return true;
@@ -278,8 +287,6 @@ function GetPropertyCharacterString(deviceInstance, objectType, objectInstance, 
             // The property has been defined.
             // Convert the property to the requested data type and return success.
             charValue = database[resultObjectType][objectInstance][resultPropertyIdentifier];
-
-            var newValue = ref.reinterpret(value, maxElementCount, 0);
             newValue.write(charValue, 0, 'utf8');
             valueElementCount.writeInt32LE(charValue.length, 0);
             return true;
@@ -292,8 +299,6 @@ function GetPropertyCharacterString(deviceInstance, objectType, objectInstance, 
             // The property has been defined.
             // Convert the property to the requested data type and return success.
             charValue = database[resultObjectType][objectInstance][resultPropertyIdentifier];
-
-            var newValue = ref.reinterpret(value, maxElementCount, 0);
             newValue.write(charValue, 0, 'utf8');
             valueElementCount.writeInt32LE(charValue.length, 0);
             return true;
@@ -305,8 +310,6 @@ function GetPropertyCharacterString(deviceInstance, objectType, objectInstance, 
         if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && useArrayIndex) {
             if (propertyArrayIndex <= database[resultObjectType][objectInstance].present_value.length) {
                 charValue = database[resultObjectType][objectInstance].bittext[propertyArrayIndex - 1];
-
-                var newValue = ref.reinterpret(value, maxElementCount, 0);
                 newValue.write(charValue, 0, 'utf8');
                 valueElementCount.writeInt32LE(charValue.length, 0);
                 return true;
@@ -320,8 +323,6 @@ function GetPropertyCharacterString(deviceInstance, objectType, objectInstance, 
             if (useArrayIndex && propertyArrayIndex > 0 && propertyArrayIndex <= database[resultObjectType][objectInstance].numberofstates) {
                 // 0 is the number of states
                 charValue = database[resultObjectType][objectInstance].statetext[propertyArrayIndex - 1];
-
-                var newValue = ref.reinterpret(value, maxElementCount, 0);
                 newValue.write(charValue, 0, 'utf8');
                 valueElementCount.writeInt32LE(charValue.length, 0);
                 return true;
@@ -335,7 +336,16 @@ function GetPropertyCharacterString(deviceInstance, objectType, objectInstance, 
 }
 
 function GetPropertyDate(deviceInstance, objectType, objectInstance, propertyIdentifier, year, month, day, weekday, useArrayIndex, propertyArrayIndex) {
-    logger.debug('GetPropertyDate - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex);
+    logger.debug('GetPropertyDate - deviceInstance: ' + deviceInstance + ', objectType: ' + objectType + ', objectInstance: ' + objectInstance + ', propertyIdentifier: ' + propertyIdentifier + ', useArrayIndex: ' + useArrayIndex + ', propertyArrayIndex: ' + propertyArrayIndex);
+
+    // Check for Analog Input object Proprietary Properties
+    if (objectType === CASBACnetStack.OBJECT_TYPE.ANALOG_INPUT && propertyIdentifier === 512 + 4 && typeof database['analog_input'][objectInstance] !== 'undefined') {
+        year.writeUInt8(database['analog_input'][objectInstance].proprietary_year, 0);
+        month.writeUInt8(database['analog_input'][objectInstance].proprietary_month, 0);
+        day.writeUInt8(database['analog_input'][objectInstance].proprietary_day, 0);
+        weekday.writeUInt8(database['analog_input'][objectInstance].proprietary_weekday, 0);
+        return true;
+    }
 
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
@@ -356,7 +366,7 @@ function GetPropertyDate(deviceInstance, objectType, objectInstance, propertyIde
     else if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.LOCAL_DATE && objectType === CASBACnetStack.OBJECT_TYPE.DEVICE) {
         if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
             var adjustedDate = new Date(Date.now() - database[resultObjectType][objectInstance].current_time_offset);
-            year.writeUInt8(adjustedDate.getFullYear(), 0);
+            year.writeUInt8(adjustedDate.getFullYear() - 1900, 0); // BACnet Spec: Year stored as (YEAR - 1900)
             month.writeUInt8(adjustedDate.getMonth(), 0);
             day.writeUInt8(adjustedDate.getDate(), 0);
             weekday.writeUInt8(adjustedDate.getDay(), 0);
@@ -380,8 +390,13 @@ function GetPropertyDate(deviceInstance, objectType, objectInstance, propertyIde
 }
 
 function GetPropertyDouble(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex) {
-    logger.debug('GetPropertyDouble - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex);
-    // Example of getting Large Analog value object PResent Value Property
+    logger.debug('GetPropertyDouble - deviceInstance: ' + deviceInstance + ', objectType: ' + objectType + ', objectInstance: ' + objectInstance + ', propertyIdentifier: ' + propertyIdentifier + ', useArrayIndex: ' + useArrayIndex + ', propertyArrayIndex: ' + propertyArrayIndex);
+    
+    // Convert the enumerated values to human readable strings.
+    var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
+    var resultObjectType = HelperGetKeyByValue(CASBACnetStack.OBJECT_TYPE, objectType).toLowerCase();
+
+    // Example of getting Large Analog value object Present Value Property
     if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE && objectType === CASBACnetStack.OBJECT_TYPE.LARGE_ANALOG_VALUE) {
         if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
             value.writeDoubleLE(database[resultObjectType][objectInstance].present_value, 0);
@@ -394,7 +409,7 @@ function GetPropertyDouble(deviceInstance, objectType, objectInstance, propertyI
 }
 
 function GetPropertyEnumerated(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex) {
-    logger.debug('GetPropertyEnumerated - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex);
+    logger.debug('GetPropertyEnumerated - deviceInstance: ' + deviceInstance + ', objectType: ' + objectType + ', objectInstance: ' + objectInstance + ', propertyIdentifier: ' + propertyIdentifier + ', useArrayIndex: ' + useArrayIndex + ', propertyArrayIndex: ' + propertyArrayIndex);
 
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
@@ -478,7 +493,7 @@ function GetPropertyEnumerated(deviceInstance, objectType, objectInstance, prope
 }
 
 function GetPropertyOctetString(deviceInstance, objectType, objectInstance, propertyIdentifier, value, valueElementCount, maxElementCount, encodingType, useArrayIndex, propertyArrayIndex) {
-    logger.debug('GetPropertyOctetString - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex);
+    logger.debug('GetPropertyOctetString - deviceInstance: ' + deviceInstance + ', objectType: ' + objectType + ', objectInstance: ' + objectInstance + ', propertyIdentifier: ' + propertyIdentifier + ', useArrayIndex: ' + useArrayIndex + ', propertyArrayIndex: ' + propertyArrayIndex);
 
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
@@ -492,9 +507,10 @@ function GetPropertyOctetString(deviceInstance, objectType, objectInstance, prop
                 return false;
             } else {
                 octetString = database[resultObjectType][objectInstance][resultPropertyIdentifier];
+                var newValue = ref.reinterpret(value, octetString.length, 0);
 
                 for (let i = 0; i < octetString.length; i++) {
-                    value.writeUInt8(octetString[i], i);
+                    newValue.writeUInt8(octetString[i], i);
                 }
                 valueElementCount.writeUInt32LE(octetString.length, 0);
                 return true;
@@ -506,9 +522,10 @@ function GetPropertyOctetString(deviceInstance, objectType, objectInstance, prop
     else if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.IPADDRESS && objectType === CASBACnetStack.OBJECT_TYPE.NETWORK_PORT) {
         if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
             octetString = database[resultObjectType][objectInstance][resultPropertyIdentifier];
+            var newValue = ref.reinterpret(value, octetString.length, 0);
 
             for (let i = 0; i < octetString.length; i++) {
-                value.writeUInt8(octetString[i], i);
+                newValue.writeUInt8(octetString[i], i);
             }
             valueElementCount.writeUInt32LE(octetString.length, 0);
             return true;
@@ -519,9 +536,10 @@ function GetPropertyOctetString(deviceInstance, objectType, objectInstance, prop
     else if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.IPDEFAULTGATEWAY && objectType === CASBACnetStack.OBJECT_TYPE.NETWORK_PORT) {
         if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
             octetString = database[resultObjectType][objectInstance][resultPropertyIdentifier];
+            var newValue = ref.reinterpret(value, octetString.length, 0);
 
             for (let i = 0; i < octetString.length; i++) {
-                value.writeUInt8(octetString[i], i);
+                newValue.writeUInt8(octetString[i], i);
             }
             valueElementCount.writeUInt32LE(octetString.length, 0);
             return true;
@@ -532,9 +550,10 @@ function GetPropertyOctetString(deviceInstance, objectType, objectInstance, prop
     else if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.IPSUBNETMASK && objectType === CASBACnetStack.OBJECT_TYPE.NETWORK_PORT) {
         if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
             octetString = database[resultObjectType][objectInstance][resultPropertyIdentifier];
+            var newValue = ref.reinterpret(value, octetString.length, 0);
 
             for (let i = 0; i < octetString.length; i++) {
-                value.writeUInt8(octetString[i], i);
+                newValue.writeUInt8(octetString[i], i);
             }
             valueElementCount.writeUInt32LE(octetString.length, 0);
             return true;
@@ -546,9 +565,10 @@ function GetPropertyOctetString(deviceInstance, objectType, objectInstance, prop
         if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
             if (useArrayIndex && propertyArrayIndex != 0 && propertyArrayIndex <= database[resultObjectType][objectInstance].ipdnsserver.length) {
                 octetString = database[resultObjectType][objectInstance].ipdnsserver[propertyArrayIndex - 1];
+                var newValue = ref.reinterpret(value, octetString.length, 0);
 
                 for (let i = 0; i < octetString.length; i++) {
-                    value.writeUInt8(octetString[i], i);
+                    newValue.writeUInt8(octetString[i], i);
                 }
                 valueElementCount.writeUInt32LE(octetString.length, 0);
                 return true;
@@ -560,9 +580,10 @@ function GetPropertyOctetString(deviceInstance, objectType, objectInstance, prop
     else if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.FDBBMDADDRESS && objectType === CASBACnetStack.OBJECT_TYPE.NETWORK_PORT) {
         if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
             octetString = database[resultObjectType][objectInstance].fdbbmdaddress_host_ip;
+            var newValue = ref.reinterpret(value, octetString.length, 0);
 
             for (let i = 0; i < octetString.length; i++) {
-                value.writeUInt8(octetString[i], i);
+                newValue.writeUInt8(octetString[i], i);
             }
             valueElementCount.writeUInt32LE(octetString.length, 0);
             return true;
@@ -574,7 +595,7 @@ function GetPropertyOctetString(deviceInstance, objectType, objectInstance, prop
 }
 
 function GetPropertyReal(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex) {
-    logger.debug('GetPropertyReal - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex);
+    logger.debug('GetPropertyReal - deviceInstance: ' + deviceInstance + ', objectType: ' + objectType + ', objectInstance: ' + objectInstance + ', propertyIdentifier: ' + propertyIdentifier + ', useArrayIndex: ' + useArrayIndex + ', propertyArrayIndex: ' + propertyArrayIndex);
 
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
@@ -611,7 +632,12 @@ function GetPropertyReal(deviceInstance, objectType, objectInstance, propertyIde
 }
 
 function GetPropertySignedInteger(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex) {
-    logger.debug('GetPropertySignedInteger - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex);
+    logger.debug('GetPropertySignedInteger - deviceInstance: ' + deviceInstance + ', objectType: ' + objectType + ', objectInstance: ' + objectInstance + ', propertyIdentifier: ' + propertyIdentifier + ', useArrayIndex: ' + useArrayIndex + ', propertyArrayIndex: ' + propertyArrayIndex);
+
+    // Convert the enumerated values to human readable strings.
+    var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
+    var resultObjectType = HelperGetKeyByValue(CASBACnetStack.OBJECT_TYPE, objectType).toLowerCase();
+
 
     // Example to handle all other properties all at once without explicit checking for each type
     if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && typeof database[resultObjectType][objectInstance][resultPropertyIdentifier] !== 'undefined') {
@@ -628,13 +654,22 @@ function GetPropertySignedInteger(deviceInstance, objectType, objectInstance, pr
 }
 
 function GetPropertyTime(deviceInstance, objectType, objectInstance, propertyIdentifier, hour, minute, second, hundrethSeconds, useArrayIndex, propertyArrayIndex) {
-    logger.debug('GetPropertyTime - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex);
+    logger.debug('GetPropertyTime - deviceInstance: ' + deviceInstance + ', objectType: ' + objectType + ', objectInstance: ' + objectInstance + ', propertyIdentifier: ' + propertyIdentifier + ', useArrayIndex: ' + useArrayIndex + ', propertyArrayIndex: ' + propertyArrayIndex);
+
+    // Check for Analog Input object Proprietary Properties
+    if (objectType === CASBACnetStack.OBJECT_TYPE.ANALOG_INPUT && propertyIdentifier === 512 + 4 && typeof database['analog_input'][objectInstance] !== 'undefined') {
+        hour.writeUInt8(database['analog_input'][objectInstance].proprietary_hour, 0);
+        minute.writeUInt8(database['analog_input'][objectInstance].proprietary_mminute, 0);
+        second.writeUInt8(database['analog_input'][objectInstance].proprietary_second, 0);
+        hundrethSeconds.writeUInt8(database['analog_input'][objectInstance].proprietary_hundredthSeconds, 0);
+        return true;
+    }
 
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
     var resultObjectType = HelperGetKeyByValue(CASBACnetStack.OBJECT_TYPE, objectType).toLowerCase();
 
-    // Example of gettingTime Value object Present Value property
+    // Example of getting Time Value object Present Value property
     if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE && objectType === CASBACnetStack.OBJECT_TYPE.TIME_VALUE) {
         if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
             hour.writeUInt8(database[resultObjectType][objectInstance].present_value.hour, 0);
@@ -658,7 +693,7 @@ function GetPropertyTime(deviceInstance, objectType, objectInstance, propertyIde
     }
 
     // Example of getting DateTime Value object Present Value property
-    if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE && objectType === CASBACnetStack.OBJECT_TYPE.DATETIME_VALUE) {
+    else if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE && objectType === CASBACnetStack.OBJECT_TYPE.DATETIME_VALUE) {
         if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance)) {
             hour.writeUInt8(database[resultObjectType][objectInstance].present_value.hour, 0);
             minute.writeUInt8(database[resultObjectType][objectInstance].present_value.minute, 0);
@@ -673,7 +708,7 @@ function GetPropertyTime(deviceInstance, objectType, objectInstance, propertyIde
 }
 
 function GetPropertyUnsignedInteger(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex) {
-    logger.debug('GetPropertyUnsignedInteger - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex);
+    logger.debug('GetPropertyUnsignedInteger - deviceInstance: ' + deviceInstance + ', objectType: ' + objectType + ', objectInstance: ' + objectInstance + ', propertyIdentifier: ' + propertyIdentifier + ', useArrayIndex: ' + useArrayIndex + ', propertyArrayIndex: ' + propertyArrayIndex);
 
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
@@ -749,7 +784,7 @@ function GetPropertyUnsignedInteger(deviceInstance, objectType, objectInstance, 
 // If the property could not be set then return false
 
 function SetPropertyBitString(deviceInstance, objectType, objectInstance, propertyIdentifier, value, length, useArrayIndex, propertyArrayIndex, priority, errorCode) {
-    logger.debug('SetPropertyBitString - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', value: ', value, ', length: ', length, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority', priority, ', errorCode: ', errorCode);
+    logger.debug('SetPropertyBitString - deviceInstance: ' + deviceInstance + ', objectType: ' + objectType + ', objectInstance: ' + objectInstance + ', propertyIdentifier: ' + propertyIdentifier + ', value: ' + value + ', length: ' + length + ', useArrayIndex: ' + useArrayIndex + ', propertyArrayIndex: ' + propertyArrayIndex + ', priority', priority + ', errorCode: ' + errorCode);
 
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
@@ -762,10 +797,11 @@ function SetPropertyBitString(deviceInstance, objectType, objectInstance, proper
                 errorCode.writeUInt32LE(CASBACnetStack.ERROR_CODES.NO_SPACE_TO_WRITE_PROPERTY, 0);
                 return false;
             } else {
+                var newValue = ref.reinterpret(value, length, 0);
                 for (let i = 0; i < length; i++) {
-                    let boolToWrite = value.readUInt8(i) === 1 ? true : false;
+                    let boolToWrite = newValue.readUInt8(i) === 1 ? true : false;
                     database[resultObjectType][objectInstance].present_value[i] = boolToWrite;
-                    logger.debug('DEBUG: value read from pointer: ', value.readUInt8(i), 'value of bool written: ', boolToWrite);
+                    logger.debug('DEBUG: value read from pointer: ' + newValue.readUInt8(i), 'value of bool written: ' + boolToWrite);
                 }
                 return true;
             }
@@ -777,14 +813,14 @@ function SetPropertyBitString(deviceInstance, objectType, objectInstance, proper
 }
 
 function SetPropertyBool(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex, priority, errorCode) {
-    logger.debug('SetPropertyBool - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', value: ', value, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ': errorCode, ', errorCode);
+    logger.debug('SetPropertyBool - deviceInstance: ' + deviceInstance + ', objectType: ' + objectType + ', objectInstance: ' + objectInstance + ', propertyIdentifier: ' + propertyIdentifier + ', value: ' + value + ', useArrayIndex: ' + useArrayIndex + ', propertyArrayIndex: ' + propertyArrayIndex + ', priority: ' + priority, ': errorCode+ ', errorCode);
 
     logger.error('SetPropertyBool failed');
     return false;
 }
 
 function SetPropertyCharacterString(deviceInstance, objectType, objectInstance, propertyIdentifier, value, length, encodingType, useArrayIndex, propertyArrayIndex, priority, errorCode) {
-    logger.debug('SetPropertyCharString - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', value: ', value, ', length: ', length, ', encodingType: ', encodingType, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ': errorCode, ', errorCode);
+    logger.debug('SetPropertyCharString - deviceInstance: ' + deviceInstance + ', objectType: ' + objectType + ', objectInstance: ' + objectInstance + ', propertyIdentifier: ' + propertyIdentifier + ', value: ' + value + ', length: ' + length + ', encodingType: ' + encodingType + ', useArrayIndex: ' + useArrayIndex + ', propertyArrayIndex: ' + propertyArrayIndex + ', priority: ' + priority, ': errorCode+ ', errorCode);
 
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
@@ -813,7 +849,7 @@ function SetPropertyCharacterString(deviceInstance, objectType, objectInstance, 
             return true;
         }
     }
-    
+
     // Check if trying to set the object name of created Analog Value object
     // Used in initializing objects
     if (propertyIdentifier === CASBACnetStack.PROPERTY_IDENTIFIER.OBJECT_NAME && objectType === CASBACnetStack.OBJECT_TYPE.ANALOG_VALUE && typeof database['created_analog_value'][objectInstance] !== 'undefined') {
@@ -826,7 +862,7 @@ function SetPropertyCharacterString(deviceInstance, objectType, objectInstance, 
 }
 
 function SetPropertyDate(deviceInstance, objectType, objectInstance, propertyIdentifier, year, month, day, weekday, useArrayIndex, propertyArrayIndex, priority, errorCode) {
-    logger.debug('SetPropertyDate - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', year: ', year, ', month: ', month, ', day: ', day, ', weekday: ', weekday, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ': errorCode, ', errorCode);
+    logger.debug('SetPropertyDate - deviceInstance: ' + deviceInstance + ', objectType: ' + objectType + ', objectInstance: ' + objectInstance + ', propertyIdentifier: ' + propertyIdentifier + ', year: ' + year + ', month: ' + month + ', day: ' + day + ', weekday: ' + weekday + ', useArrayIndex: ' + useArrayIndex + ', propertyArrayIndex: ' + propertyArrayIndex + ', priority: ' + priority, ': errorCode+ ', errorCode);
 
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
@@ -848,7 +884,7 @@ function SetPropertyDate(deviceInstance, objectType, objectInstance, propertyIde
 }
 
 function SetPropertyDouble(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex, priority, errorCode) {
-    logger.debug('SetPropertyDouble - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', value: ', value, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ': errorCode, ', errorCode);
+    logger.debug('SetPropertyDouble - deviceInstance: ' + deviceInstance + ', objectType: ' + objectType + ', objectInstance: ' + objectInstance + ', propertyIdentifier: ' + propertyIdentifier + ', value: ' + value + ', useArrayIndex: ' + useArrayIndex + ', propertyArrayIndex: ' + propertyArrayIndex + ', priority: ' + priority, ': errorCode+ ', errorCode);
 
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
@@ -867,7 +903,7 @@ function SetPropertyDouble(deviceInstance, objectType, objectInstance, propertyI
 }
 
 function SetPropertyEnumerated(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex, priority, errorCode) {
-    logger.debug('SetPropertyEnumerated - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', value: ', value, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ': errorCode, ', errorCode);
+    logger.debug('SetPropertyEnumerated - deviceInstance: ' + deviceInstance + ', objectType: ' + objectType + ', objectInstance: ' + objectInstance + ', propertyIdentifier: ' + propertyIdentifier + ', value: ' + value + ', useArrayIndex: ' + useArrayIndex + ', propertyArrayIndex: ' + propertyArrayIndex + ', priority: ' + priority, ': errorCode+ ', errorCode);
 
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
@@ -895,7 +931,7 @@ function SetPropertyEnumerated(deviceInstance, objectType, objectInstance, prope
 }
 
 function SetPropertyNull(deviceInstance, objectType, objectInstance, propertyIdentifier, useArrayIndex, propertyArrayIndex, priority, errorCode) {
-    logger.debug('SetPropertyNull - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier, :', propertyIdentifier, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ', errorCode: ', errorCode);
+    logger.debug('SetPropertyNull - deviceInstance: ' + deviceInstance + ', objectType: ' + objectType + ', objectInstance: ' + objectInstance + ', propertyIdentifier, :', propertyIdentifier + ', useArrayIndex: ' + useArrayIndex + ', propertyArrayIndex: ' + propertyArrayIndex + ', priority: ' + priority + ', errorCode: ' + errorCode);
 
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
@@ -915,7 +951,7 @@ function SetPropertyNull(deviceInstance, objectType, objectInstance, propertyIde
 }
 
 function SetPropertyOctetString(deviceInstance, objectType, objectInstance, propertyIdentifier, value, length, useArrayIndex, propertyArrayIndex, priority, errorCode) {
-    logger.debug('SetPropertyOctetString - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', value: ', value, ', length: ', length, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ', errorCode: ', errorCode);
+    logger.debug('SetPropertyOctetString - deviceInstance: ' + deviceInstance + ', objectType: ' + objectType + ', objectInstance: ' + objectInstance + ', propertyIdentifier: ' + propertyIdentifier + ', value: ' + value + ', length: ' + length + ', useArrayIndex: ' + useArrayIndex + ', propertyArrayIndex: ' + propertyArrayIndex + ', priority: ' + priority + ', errorCode: ' + errorCode);
 
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
@@ -928,8 +964,9 @@ function SetPropertyOctetString(deviceInstance, objectType, objectInstance, prop
                 errorCode.writeUInt32LE(CASBACnetStack.ERROR_CODES.NO_SPACE_TO_WRITE_PROPERTY, 0);
                 return false;
             } else {
+                var newValue = ref.reinterpret(value, length, 0);
                 for (let offset = 0; offset < length; offset++) {
-                    database[resultObjectType][objectInstance].present_value[offset] = value.readUInt8(offset);
+                    database[resultObjectType][objectInstance].present_value[offset] = newValue.readUInt8(offset);
                 }
                 return true;
             }
@@ -944,8 +981,9 @@ function SetPropertyOctetString(deviceInstance, objectType, objectInstance, prop
                     errorCode.writeUInt32LE(CASBACnetStack.ERROR_CODES.VALUE_OUT_OF_RANGE, 0);
                     return false;
                 } else {
+                    var newValue = ref.reinterpret(value, length, 0);
                     for (let offset = 0; offset < 4; offset++) {
-                        database[resultObjectType][objectInstance].fdbbmdaddress_host_ip[offset] = value.readUInt8(offset);
+                        database[resultObjectType][objectInstance].fdbbmdaddress_host_ip[offset] = newValue.readUInt8(offset);
                     }
                     database[resultObjectType][objectInstance].changespending = true;
                     return true;
@@ -959,7 +997,7 @@ function SetPropertyOctetString(deviceInstance, objectType, objectInstance, prop
 }
 
 function SetPropertyReal(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex, priority, errorCode) {
-    logger.debug('SetPropertyReal - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', value: ', value, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ', errorCode: ', errorCode);
+    logger.debug('SetPropertyReal - deviceInstance: ' + deviceInstance + ', objectType: ' + objectType + ', objectInstance: ' + objectInstance + ', propertyIdentifier: ' + propertyIdentifier + ', value: ' + value + ', useArrayIndex: ' + useArrayIndex + ', propertyArrayIndex: ' + propertyArrayIndex + ', priority: ' + priority + ', errorCode: ' + errorCode);
 
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
@@ -1006,7 +1044,7 @@ function SetPropertyReal(deviceInstance, objectType, objectInstance, propertyIde
 }
 
 function SetPropertySignedInteger(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex, priority, errorCode) {
-    logger.debug('SetPropertySignedInteger - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', value: ', value, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ', errorCode: ', errorCode);
+    logger.debug('SetPropertySignedInteger - deviceInstance: ' + deviceInstance + ', objectType: ' + objectType + ', objectInstance: ' + objectInstance + ', propertyIdentifier: ' + propertyIdentifier + ', value: ' + value + ', useArrayIndex: ' + useArrayIndex + ', propertyArrayIndex: ' + propertyArrayIndex + ', priority: ' + priority + ', errorCode: ' + errorCode);
 
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
@@ -1038,7 +1076,7 @@ function SetPropertySignedInteger(deviceInstance, objectType, objectInstance, pr
 }
 
 function SetPropertyTime(deviceInstance, objectType, objectInstance, propertyIdentifier, hour, minute, second, hundrethSeconds, useArrayIndex, propertyArrayIndex, priority, errorCode) {
-    logger.debug('SetPropertyTime - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', hour: ', hour, ', minute: ', minute, ', second: ', second, ', hundrethSeconds: ', hundrethSeconds, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ', errorCode: ', errorCode);
+    logger.debug('SetPropertyTime - deviceInstance: ' + deviceInstance + ', objectType: ' + objectType + ', objectInstance: ' + objectInstance + ', propertyIdentifier: ' + propertyIdentifier + ', hour: ' + hour + ', minute: ' + minute + ', second: ' + second + ', hundrethSeconds: ' + hundrethSeconds + ', useArrayIndex: ' + useArrayIndex + ', propertyArrayIndex: ' + propertyArrayIndex + ', priority: ' + priority + ', errorCode: ' + errorCode);
 
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
@@ -1060,7 +1098,7 @@ function SetPropertyTime(deviceInstance, objectType, objectInstance, propertyIde
 }
 
 function SetPropertyUnsignedInteger(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex, priority, errorCode) {
-    logger.debug('SetPropertyUnsignedInteger - deviceInstance: ', deviceInstance, ', objectType: ', objectType, ', objectInstance: ', objectInstance, ', propertyIdentifier: ', propertyIdentifier, ', value: ', value, ', useArrayIndex: ', useArrayIndex, ', propertyArrayIndex: ', propertyArrayIndex, ', priority: ', priority, ', errorCode: ', errorCode);
+    logger.debug('SetPropertyUnsignedInteger - deviceInstance: ' + deviceInstance + ', objectType: ' + objectType + ', objectInstance: ' + objectInstance + ', propertyIdentifier: ' + propertyIdentifier + ', value: ' + value + ', useArrayIndex: ' + useArrayIndex + ', propertyArrayIndex: ' + propertyArrayIndex + ', priority: ' + priority + ', errorCode: ' + errorCode);
 
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
@@ -1221,7 +1259,7 @@ function HookTextMessage(sourceDeviceIdentifier, useMessageClass, messageClassUn
     // Check that this device is configured to do some logic using the text message
     if (sourceDeviceIdentifier == expectedSourceDeviceIdentifier && messageClassUnsigned == expectedMessageClass && messagePriority == expectedMessagePriority) {
         // Perform some logic using the message
-        console.log('Received text message request meant for us to perform some logic: ', CreateStringFromCharPointer(message, messageLength));
+        console.log('Received text message request meant for us to perform some logic: ' + CreateStringFromCharPointer(message, messageLength));
 
         // Device is configured to handle the confirmed text message, response is Result(+) or simpleAck
         return true;
@@ -1240,7 +1278,8 @@ function HookTextMessage(sourceDeviceIdentifier, useMessageClass, messageClassUn
 function LogDebugMessage(message, messageLength, messageType) {
     // This callback is called when the CAS BACnet Stack logs an error or info message
     // In this callback, you will be able to access this debug message.
-    console.log('Log message type: ', messageType ? 'Info' : 'Error');
+    console.log('Log message type: ' + messageType ? 'Info' : 'Error');
+    console.log(CreateStringFromCharPointer(message, messageLength));
 }
 
 async function main() {
@@ -1429,6 +1468,77 @@ async function main() {
     }
     console.log('OK');
 
+    // Setup Network Parameters
+    // ------------------------------------------------------------------------
+    // Get Local IP
+    // TODO: Use manual values for now - couldn't retrieve network info properly
+    var localAddress = [192, 168, 1, 159];
+    var defaultGateway = [192, 168, 1, 20];
+    var subnetMask = [255, 255, 255, 0];
+
+    // Only one network adapter:
+    // const localNetwork = await new Promise((resolve) => {
+    //     network.get_active_interface((result, err) => {
+    //         if (err) {
+    //             logger.error('failed to get network interface information - ', err);
+    //             rejects(err);
+    //         } else {
+    //             resolve(result);
+    //         }
+    //     });
+    // });
+    // localAddress = localNetwork.ip_address.split('.').map(Number);
+    // defaultGateway = localNetwork.gateway_ip.split('.').map(Number);
+    // subnetMask = localNetwork.netmask.split('.').map(Number);
+
+    // Multiple network adapters:
+    const localNetworks = await new Promise((resolve, reject) => {
+        network.get_interfaces_list((err, result) => {
+            if (err) {
+                logger.error('failed to get network interface information - ' + err);
+                reject(err);
+            } else {
+                resolve(result);
+            }
+        });
+    });
+    for (localNetwork in localNetworks) {
+        // Specify your network here with your own filters
+        if (typeof localNetwork.ip_address !== 'undefined') {
+            let addressIterator = localNetwork.ip_address.split('.');
+            if (addressIterator[0] === 192) {
+                if (typeof localNetwork.ip_address !== 'undefined') {
+                    localAddress = localNetwork.ip_address.split('.').map(Number);
+                }
+                if (typeof localNetwork.gateway_ip !== 'undefined') {
+                    defaultGateway = localNetwork.gateway_ip.split('.').map(Number);
+                }
+                if (typeof localNetwork.netmask !== 'undefined') {
+                    subnetMask = localNetwork.netmask.split('.').map(Number);
+                }
+            }
+        }
+    }
+
+    // Write Network Parameters to database
+    database['network_port'][parseInt(Object.keys(database['network_port'])[0])].bacnetipudpport = SETTING_BACNET_PORT;
+    database['network_port'][parseInt(Object.keys(database['network_port'])[0])].fdbbmdaddress_port = SETTING_BACNET_PORT;
+    database['network_port'][parseInt(Object.keys(database['network_port'])[0])].ipaddress = localAddress.slice();
+    database['network_port'][parseInt(Object.keys(database['network_port'])[0])].ipaddress[4] = SETTING_BACNET_PORT / 256;
+    database['network_port'][parseInt(Object.keys(database['network_port'])[0])].ipaddress[5] = SETTING_BACNET_PORT % 256;
+    database['network_port'][parseInt(Object.keys(database['network_port'])[0])].fdbbmdaddress_host_ip = localAddress.slice();
+    database['network_port'][parseInt(Object.keys(database['network_port'])[0])].fdbbmdaddress_host_ip[4] = SETTING_BACNET_PORT / 256;
+    database['network_port'][parseInt(Object.keys(database['network_port'])[0])].fdbbmdaddress_host_ip[5] = SETTING_BACNET_PORT % 256;
+    database['network_port'][parseInt(Object.keys(database['network_port'])[0])].ipdefaultgateway = defaultGateway.slice();
+    database['network_port'][parseInt(Object.keys(database['network_port'])[0])].ipsubnetmask = subnetMask.slice();
+    database['network_port'][parseInt(Object.keys(database['network_port'])[0])].broadcast_ip_address = localAddress.slice();
+    database['network_port'][parseInt(Object.keys(database['network_port'])[0])].broadcast_ip_address[3] = 255;
+
+    // Setup your own DNS Servers if needed
+    // database['network_port'][parseInt(Object.keys(database['network_port'])[0])].ipdnsserver[0] = firstDNSServer.slice();
+    // database['network_port'][parseInt(Object.keys(database['network_port'])[0])].ipdnsserver[1] = secondDNSServer.slice();
+    // etc.
+
     // Setup the UDP socket
     // ------------------------------------------------------------------------
     console.log('FYI: Setting up BACnet UDP port. Port:', SETTING_BACNET_PORT);
@@ -1455,67 +1565,11 @@ async function main() {
         FuncPtrCallbackGetSystemTime;
     });
 
-    server.bind(SETTING_BACNET_PORT);
-
-    // Get Local IP
-    var localAddress = [];
-    var defaultGateway = [];
-    var subnetMask = [];
-    // Only one network adapter:
-    // const localNetwork = await new Promise((resolve) => {
-    //     network.get_active_interface((result, err) => {
-    //         if (err) {
-    //             logger.error('failed to get network interface information - ', err);
-    //             rejects(err);
-    //         } else {
-    //             resolve(result);
-    //         }
-    //     });
-    // });
-    // localAddress = localNetwork.ip_address.split('.').map(Number);
-    // defaultGateway = localNetwork.gateway_ip.split('.').map(Number);
-    // subnetMask = localNetwork.netmask.split('.').map(Number);
-
-    // Multiple network adapters:
-    const localNetworks = await new Promise((resolve, reject) => {
-        network.get_interfaces_list((result, err) => {
-            if (err) {
-                logger.error('failed to get network interface information - ', err);
-                reject(err);
-            } else {
-                resolve(result);
-            }
-        });
+    // TODO: We manual set server address until we find reliable way of getting ip
+    server.bind({
+        address: '192.168.1.159',
+        port: SETTING_BACNET_PORT
     });
-    for (localNetwork in localNetworks) {
-        // Specify your network here with your own filters
-        let addressIterator = localNetwork.ip_address.split('.');
-        if (addressIterator[0] === 192) {
-            localAddress = localNetwork.ip_address.split('.').map(Number);
-            defaultGateway = localNetwork.gateway_ip.split('.').map(Number);
-            subnetMask = localNetwork.netmask.split('.').map(Number);
-        }
-    }
-    logger.debug('See local IPs: ', results);
-
-    // Write Network Parameters to database
-    database['network_port'][parseInt(Object.keys(database['network_port'])[0])].bacnetipudpport = SETTING_BACNET_PORT;
-    database['network_port'][parseInt(Object.keys(database['network_port'])[0])].fdbbmdaddress_port = SETTING_BACNET_PORT;
-    database['network_port'][parseInt(Object.keys(database['network_port'])[0])].ipaddress = localAddress.slice();
-    database['network_port'][parseInt(Object.keys(database['network_port'])[0])].ipaddress[4] = SETTING_BACNET_PORT / 256;
-    database['network_port'][parseInt(Object.keys(database['network_port'])[0])].ipaddress[5] = SETTING_BACNET_PORT % 256;
-    database['network_port'][parseInt(Object.keys(database['network_port'])[0])].fdbbmdaddress_host_ip = localAddress.slice();
-    database['network_port'][parseInt(Object.keys(database['network_port'])[0])].fdbbmdaddress_host_ip[4] = SETTING_BACNET_PORT / 256;
-    database['network_port'][parseInt(Object.keys(database['network_port'])[0])].fdbbmdaddress_host_ip[5] = SETTING_BACNET_PORT % 256;
-    database['network_port'][parseInt(Object.keys(database['network_port'])[0])].ipdefaultgateway = defaultGateway.slice();
-    database['network_port'][parseInt(Object.keys(database['network_port'])[0])].ipsubnetmask = subnetMask.slice();
-    database['network_port'][parseInt(Object.keys(database['network_port'])[0])].broadcast_ip_address = localAddress.slice();
-    database['network_port'][parseInt(Object.keys(database['network_port'])[0])].broadcast_ip_address[3] = 255;
-
-    // Setup your own DNS Servers if needed
-    // database['network_port'][parseInt(Object.keys(database['network_port'])[0])].ipdnsserver[0] = firstDNSServer.slice();
-    // database['network_port'][parseInt(Object.keys(database['network_port'])[0])].ipdnsserver[1] = secondDNSServer.slice();
-    // etc.
 
     // Setup the Device Properties
     // ------------------------------------------------------------------------
@@ -1545,9 +1599,8 @@ async function main() {
     // Setup the Object Properties
     // ------------------------------------------------------------------------
     // Analog Input (AI) properties
-    console.log('TODO: Update callbacks for proprietary properties'); // Reminder
+    // TODO: Update callbacks for proprietary properties
     // Enable Proprietary Properties
-    logger.debug('DEBUG: Check parse of objectInstance: ', parseInt(Object.keys(database['analog_input'])[0]));
     CASBACnetStack.stack.BACnetStack_SetProprietaryProperty(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.ANALOG_INPUT, parseInt(Object.keys(database['analog_input'])[0]), 512 + 1, false, false, CASBACnetStack.DATA_TYPES.CHARACTER_STRING, false, false, false);
     CASBACnetStack.stack.BACnetStack_SetProprietaryProperty(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.ANALOG_INPUT, parseInt(Object.keys(database['analog_input'])[0]), 512 + 2, true, false, CASBACnetStack.DATA_TYPES.CHARACTER_STRING, false, false, false);
     CASBACnetStack.stack.BACnetStack_SetProprietaryProperty(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.ANALOG_INPUT, parseInt(Object.keys(database['analog_input'])[0]), 512 + 3, true, true, CASBACnetStack.DATA_TYPES.CHARACTER_STRING, false, false, false);
@@ -1614,7 +1667,6 @@ async function main() {
 
     // Trend Log (TL) properties
     // Add object
-    logger.debug('REMINDER: Manual add Trend Log object');
     if (!CASBACnetStack.stack.BACnetStack_AddTrendLogObject(DEVICE_INSTANCE, parseInt(Object.keys(database['trend_log'])[0]), CASBACnetStack.OBJECT_TYPE.ANALOG_INPUT, parseInt(Object.keys(database['analog_input'])[0]), CASBACnetStack.PROPERTY_IDENTIFIER.PRESENT_VALUE, CASBACnetStack.CONSTANTS.MAX_TREND_LOG_MAX_BUFFER_SIZE, false, 0)) {
         logger.error('Failed to add TrendLog');
         return false;
@@ -1640,13 +1692,13 @@ async function main() {
         logger.error('Failed to add AnalogInput to be logged by TrendLogMultiple');
         return false;
     }
-    if (!CASBACnetStack.stack.BACnetStack_SetTrendLogTypeToPolled(DEVICE_INSTANCE, CASBACnetStack.PROPERTY_IDENTIFIER.TREND_LOG_MULTIPLE, parseInt(Object.keys(database['trend_log_multiple'])[0]), true, false, 3000)) {
-        logger.error('Failed to add TrendLogMultiple to poll every 30 seconds');
+    if (!CASBACnetStack.stack.BACnetStack_SetTrendLogTypeToPolled(DEVICE_INSTANCE, CASBACnetStack.OBJECT_TYPE.TREND_LOG_MULTIPLE, parseInt(Object.keys(database['trend_log_multiple'])[0]), true, false, 3000)) {
+        logger.error('Failed to set TrendLogMultiple to poll every 30 seconds');
         return false;
     }
 
     // Network Port (NP) properties
-    if (!CASBACnetStack.stack.BACnetStack_AddNetworkPortObject(DEVICE_INSTANCE, parseInt(Object.keys(database['network_port'])[0], CASBACnetStack.CONSTANTS.NETWORK_TYPE_IPV4, CASBACnetStack.CONSTANTS.PROTOCOL_LEVEL_BACNET_APPLICATION, CASBACnetStack.CONSTANTS.NETWORK_PORT_LOWEST_PROTOCOL_LAYER))) {
+    if (!CASBACnetStack.stack.BACnetStack_AddNetworkPortObject(DEVICE_INSTANCE, parseInt(Object.keys(database['network_port'])[0]), CASBACnetStack.CONSTANTS.NETWORK_TYPE_IPV4, CASBACnetStack.CONSTANTS.PROTOCOL_LEVEL_BACNET_APPLICATION, CASBACnetStack.CONSTANTS.NETWORK_PORT_LOWEST_PROTOCOL_LAYER)) {
         logger.error('Failed to add NetworkPort');
         return false;
     }
@@ -1659,16 +1711,16 @@ async function main() {
     bdtHostAddr.writeUint8(localAddress[1], 1); // IP
     bdtHostAddr.writeUint8(localAddress[2], 2); // IP
     bdtHostAddr.writeUint8(localAddress[3], 3); // IP
-    bdtHostAddr.writeUint8(SETTING_BACNET_PORT / 255, 4); // Port
-    bdtHostAddr.writeUint8(SETTING_BACNET_PORT % 255, 5); // Port
+    bdtHostAddr.writeUint8(SETTING_BACNET_PORT / 256, 4); // Port
+    bdtHostAddr.writeUint8(SETTING_BACNET_PORT % 256, 5); // Port
     var bdtSubnetMask = Buffer.allocUnsafe(6);
     bdtSubnetMask.writeUint8(subnetMask[0], 0); // IP
     bdtSubnetMask.writeUint8(subnetMask[1], 1); // IP
     bdtSubnetMask.writeUint8(subnetMask[2], 2); // IP
     bdtSubnetMask.writeUint8(subnetMask[3], 3); // IP
-    bdtSubnetMask.writeUint8(SETTING_BACNET_PORT / 255, 4); // Port
-    bdtSubnetMask.writeUint8(SETTING_BACNET_PORT % 255, 5); // Port
-    CASBACnetStack.stack.BACnetStack_AddBDTEntry(bdtHostAddr, 6, subnetMask, 4); // First BDT Entry must be server device
+    bdtSubnetMask.writeUint8(SETTING_BACNET_PORT / 256, 4); // Port
+    bdtSubnetMask.writeUint8(SETTING_BACNET_PORT % 256, 5); // Port
+    CASBACnetStack.stack.BACnetStack_AddBDTEntry(bdtHostAddr, 6, bdtSubnetMask, 4); // First BDT Entry must be server device
 
     // Date Time Value (DTV) properties
     // No special config
@@ -1692,19 +1744,18 @@ async function main() {
     bdtSubnetMask.writeUint8(database['network_port'][parseInt(Object.keys(database['network_port'])[0])].broadcast_ip_address[1], 1); // IP
     bdtSubnetMask.writeUint8(database['network_port'][parseInt(Object.keys(database['network_port'])[0])].broadcast_ip_address[2], 2); // IP
     bdtSubnetMask.writeUint8(database['network_port'][parseInt(Object.keys(database['network_port'])[0])].broadcast_ip_address[3], 3); // IP
-    bdtSubnetMask.writeUint8(SETTING_BACNET_PORT / 255, 4); // Port
-    bdtSubnetMask.writeUint8(SETTING_BACNET_PORT % 255, 5); // Port
-    if (!CASBACnetStack.stack.BACnetStack_SendIAm(DEVICE_INSTANCE, iAmConnectionString, 6, CASBACnetStack.CONSTANTS.NETWORK_TYPE_BACNET_IP, true, 65535, NULL, 0)) {
+    bdtSubnetMask.writeUint8(SETTING_BACNET_PORT / 256, 4); // Port
+    bdtSubnetMask.writeUint8(SETTING_BACNET_PORT % 256, 5); // Port
+    if (!CASBACnetStack.stack.BACnetStack_SendIAm(DEVICE_INSTANCE, iAmConnectionString, 6, CASBACnetStack.CONSTANTS.NETWORK_TYPE_BACNET_IP, true, 65535, ref.NULL_POINTER, 0)) {
         logger.error('Unable to send the IAm broadcast');
         return false;
     }
 
     // Broadcast BACnet stack version to the network via UnconfirmedTextMessage
     var stackVersionInfo = 'CAS BACnetStack v' + CASBACnetStack.stack.BACnetStack_GetAPIMajorVersion() + '.' + CASBACnetStack.stack.BACnetStack_GetAPIMinorVersion() + '.' + CASBACnetStack.stack.BACnetStack_GetAPIPatchVersion() + '.' + CASBACnetStack.stack.BACnetStack_GetAPIBuildVersion();
-    logger.debug('DEBUG: stackVersionInfo: ', stackVersionInfo);
     var stackVersionInfoBuffer = Buffer.allocUnsafe(50);
     var stackVersionInfoBufferLen = stackVersionInfoBuffer.write(stackVersionInfo, 'utf-8');
-    if (!CASBACnetStack.stack.BACnetStack_SendUnconfirmedTextMessage(DEVICE_INSTANCE, false, 0, ref.NULL_POINTER, 0, 0, stackVersionInfoBuffer, stackVersionInfoBufferLen, iAmConnectionString, CASBACnetStack.CONSTANTS.NETWORK_TYPE_BACNET_IP, true, 65535, ref.NULL_POINTER, 0)) {
+    if (!CASBACnetStack.stack.BACnetStack_SendUnconfirmedTextMessage(DEVICE_INSTANCE, false, 0, ref.NULL_POINTER, 0, 0, stackVersionInfoBuffer, stackVersionInfoBufferLen, iAmConnectionString, 6, CASBACnetStack.CONSTANTS.NETWORK_TYPE_BACNET_IP, true, 65535, ref.NULL_POINTER, 0)) {
         logger.error('Unable to send UnconfirmedTextMessage broadcast');
         return false;
     }
