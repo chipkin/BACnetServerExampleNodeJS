@@ -4,11 +4,12 @@
     "description": "An example server application for the CAS BACnet Stack",
     "main": "program.js",
     "dependencies": {
+        "default-gateway": "^6.0.3",
         "dequeue": "^1.0.5",
         "ffi-napi": "^4.0.3",
-        "network": "^0.6.1",
         "ref-napi": "^3.0.3",
-        "winston": "^3.6.0"
+        "winston": "^3.6.0",
+        "wmic": "^1.1.1"
     },
     "scripts": {
         "start": "node program.js"

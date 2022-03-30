@@ -3,7 +3,7 @@
 // Start with the "function main()"
 //
 // Written by: Steven Smethurst
-// Last updated: Mar 24, 2022
+// Last updated: Mar 25, 2022
 //
 
 var CASBACnetStack = require('./CASBACnetStackAdapter'); // CAS BACnet stack
@@ -13,7 +13,8 @@ var ffi = require('ffi-napi'); // DLL interface. https://github.com/node-ffi/nod
 var ref = require('ref-napi'); // DLL Data types. https://github.com/TooTallNate/ref
 var dequeue = require('dequeue'); // Creates a FIFO buffer. https://github.com/lleo/node-dequeue/
 const dgram = require('dgram'); // UDP server
-var network = require('network');
+const os = require('os'); // Retrieve network info
+var defaultGatewayLib = require('default-gateway'); // Retrieve network info
 const { truncate } = require('fs');
 const { privateDecrypt } = require('crypto');
 const { rejects } = require('assert');
@@ -22,13 +23,17 @@ const { rejects } = require('assert');
 const loggerObj = require('./logging');
 const { data } = require('./logging');
 const { debug } = require('console');
+const { defaultMaxListeners } = require('events');
 const logger = loggerObj.child({ label: 'BACnetServerNodeJSExample' });
 
 // Settings
 const SETTING_BACNET_PORT = 47808; // Default BACnet IP UDP Port.
+const SETTING_DEFAULT_GATEWAY = []; // Set Default Gateway to use for BACnet, set to [] to discover
+const SETTING_IP_ADDRESS = []; // Set IP Address to use for BACnet, set to [] to discover
+const SETTING_SUBNET_MASK = []; // Set Subnet Mask to use for BACnet, set to [] to discover
 
 // Constants
-const APPLICATION_VERSION = '1.1.0.0';
+const APPLICATION_VERSION = '1.2.0.0';
 
 // Globals
 var fifoSendBuffer = new dequeue();
@@ -391,7 +396,7 @@ function GetPropertyDate(deviceInstance, objectType, objectInstance, propertyIde
 
 function GetPropertyDouble(deviceInstance, objectType, objectInstance, propertyIdentifier, value, useArrayIndex, propertyArrayIndex) {
     logger.debug('GetPropertyDouble - deviceInstance: ' + deviceInstance + ', objectType: ' + objectType + ', objectInstance: ' + objectInstance + ', propertyIdentifier: ' + propertyIdentifier + ', useArrayIndex: ' + useArrayIndex + ', propertyArrayIndex: ' + propertyArrayIndex);
-    
+
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
     var resultObjectType = HelperGetKeyByValue(CASBACnetStack.OBJECT_TYPE, objectType).toLowerCase();
@@ -637,7 +642,6 @@ function GetPropertySignedInteger(deviceInstance, objectType, objectInstance, pr
     // Convert the enumerated values to human readable strings.
     var resultPropertyIdentifier = HelperGetKeyByValue(CASBACnetStack.PROPERTY_IDENTIFIER, propertyIdentifier).toLowerCase();
     var resultObjectType = HelperGetKeyByValue(CASBACnetStack.OBJECT_TYPE, objectType).toLowerCase();
-
 
     // Example to handle all other properties all at once without explicit checking for each type
     if (database.hasOwnProperty(resultObjectType) && database[resultObjectType].hasOwnProperty(objectInstance) && typeof database[resultObjectType][objectInstance][resultPropertyIdentifier] !== 'undefined') {
@@ -1282,7 +1286,7 @@ function LogDebugMessage(message, messageLength, messageType) {
     console.log(CreateStringFromCharPointer(message, messageLength));
 }
 
-async function main() {
+function main() {
     // Print version information
     // ------------------------------------------------------------------------
     console.log('BACnet Server Example NodeJS');
@@ -1469,55 +1473,38 @@ async function main() {
     console.log('OK');
 
     // Setup Network Parameters
+    // Skipped if network settings are configured - see README
     // ------------------------------------------------------------------------
     // Get Local IP
-    // TODO: Use manual values for now - couldn't retrieve network info properly
-    var localAddress = [192, 168, 1, 159];
-    var defaultGateway = [192, 168, 1, 20];
-    var subnetMask = [255, 255, 255, 0];
+    var localAddress = [];
+    var defaultGateway = [];
+    var subnetMask = [];
 
-    // Only one network adapter:
-    // const localNetwork = await new Promise((resolve) => {
-    //     network.get_active_interface((result, err) => {
-    //         if (err) {
-    //             logger.error('failed to get network interface information - ', err);
-    //             rejects(err);
-    //         } else {
-    //             resolve(result);
-    //         }
-    //     });
-    // });
-    // localAddress = localNetwork.ip_address.split('.').map(Number);
-    // defaultGateway = localNetwork.gateway_ip.split('.').map(Number);
-    // subnetMask = localNetwork.netmask.split('.').map(Number);
-
-    // Multiple network adapters:
-    const localNetworks = await new Promise((resolve, reject) => {
-        network.get_interfaces_list((err, result) => {
-            if (err) {
-                logger.error('failed to get network interface information - ' + err);
-                reject(err);
-            } else {
-                resolve(result);
-            }
-        });
-    });
-    for (localNetwork in localNetworks) {
-        // Specify your network here with your own filters
-        if (typeof localNetwork.ip_address !== 'undefined') {
-            let addressIterator = localNetwork.ip_address.split('.');
-            if (addressIterator[0] === 192) {
-                if (typeof localNetwork.ip_address !== 'undefined') {
-                    localAddress = localNetwork.ip_address.split('.').map(Number);
+    // Get netmask and ip address if not set
+    if (SETTING_IP_ADDRESS.length !== 4 || SETTING_SUBNET_MASK.length !== 4) {
+        const networkInterfaces = os.networkInterfaces();
+        var localAddressString = '';
+        for (localNetwork in networkInterfaces) {
+            networkInterfaces[localNetwork].forEach(function (adapter) {
+                // NOTE: Specify your network here with your own filters
+                let addressIterator = adapter.address.split('.').map(Number);
+                if (addressIterator[0] === 192 && addressIterator[2] === 1) {
+                    localAddress = adapter.address.split('.').map(Number);
+                    localAddressString = adapter.address;
+                    subnetMask = adapter.netmask.split('.').map(Number);
                 }
-                if (typeof localNetwork.gateway_ip !== 'undefined') {
-                    defaultGateway = localNetwork.gateway_ip.split('.').map(Number);
-                }
-                if (typeof localNetwork.netmask !== 'undefined') {
-                    subnetMask = localNetwork.netmask.split('.').map(Number);
-                }
-            }
+            });
         }
+    } else {
+        localAddress = SETTING_IP_ADDRESS;
+        localAddressString = SETTING_IP_ADDRESS[0] + '.' + SETTING_IP_ADDRESS[1] + '.' + SETTING_IP_ADDRESS[2] + '.' + SETTING_IP_ADDRESS[3];
+        subnetMask = SETTING_SUBNET_MASK;
+    }
+    // Get defuault gateway if not set
+    if (SETTING_DEFAULT_GATEWAY.length !== 4) {
+        defaultGateway = defaultGatewayLib.v4.sync().gateway.split('.').map(Number);
+    } else {
+        defaultGateway = SETTING_DEFAULT_GATEWAY;
     }
 
     // Write Network Parameters to database
@@ -1567,7 +1554,7 @@ async function main() {
 
     // TODO: We manual set server address until we find reliable way of getting ip
     server.bind({
-        address: '192.168.1.159',
+        address: localAddressString,
         port: SETTING_BACNET_PORT
     });
 
