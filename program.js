@@ -33,7 +33,7 @@ const SETTING_IP_ADDRESS = []; // Set IP Address to use for BACnet, set to [] to
 const SETTING_SUBNET_MASK = []; // Set Subnet Mask to use for BACnet, set to [] to discover
 
 // Constants
-const APPLICATION_VERSION = '1.2.0.0';
+const APPLICATION_VERSION = '1.2.1.0';
 
 // Globals
 var fifoSendBuffer = new dequeue();
